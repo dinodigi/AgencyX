@@ -60,6 +60,7 @@ export class ScrapeRunner {
       claimed: listing.claimed,
       photo_count: listing.photoCount,
       price_level: listing.priceLevel,
+      created_at: new Date().toISOString(),
       // Optional relations are omitted (not set to undefined) when absent.
       ...(queryId ? { search_query: queryId } : {}),
       ...(ctx.agencyRowId ? { agency: ctx.agencyRowId } : {}),

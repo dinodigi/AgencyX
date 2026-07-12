@@ -25,6 +25,22 @@ function buildFilter(sp: SP): LeadsListOpts["filter"] {
   return filter;
 }
 
+function buildSort(sp: SP): NonNullable<LeadsListOpts["sort"]> {
+  switch (sp.sort as string | undefined) {
+    case "oldest":
+      return { field: "created_at", dir: "asc" };
+    case "name":
+      return { field: "business_name", dir: "asc" };
+    case "rating":
+      return { field: "rating", dir: "desc" };
+    case "reviews":
+      return { field: "review_count", dir: "desc" };
+    case "newest":
+    default:
+      return { field: "created_at", dir: "desc" };
+  }
+}
+
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
   if (!isConfigured()) return <NotConfigured />;
   const status = await getAuthStatus();
@@ -34,11 +50,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   const sp = await searchParams;
   const filter = buildFilter(sp);
+  const sort = buildSort(sp);
 
   let rows: Awaited<ReturnType<typeof ctx.ax.leads.list>> = [];
   let error: string | null = null;
   try {
-    rows = await ctx.ax.leads.list({ filter, limit: 200, sort: { field: "business_name", dir: "asc" } });
+    rows = await ctx.ax.leads.list({ filter, limit: 200, sort });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

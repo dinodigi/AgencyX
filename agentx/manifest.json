@@ -400,6 +400,12 @@
           "publicRead": true
         },
         {
+          "name": "created_at",
+          "type": "date",
+          "label": "Created At",
+          "publicRead": true
+        },
+        {
           "name": "search_query",
           "type": "relation",
           "label": "Search Query",

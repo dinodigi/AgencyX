@@ -56,6 +56,15 @@ export function LeadFilters() {
         <option value="true">Claimed</option>
       </select>
 
+      {/* Sort — defaults to newest. Maps to the delivery client's sort:{field,dir} in the page. */}
+      <select className={sel} value={params.get("sort") ?? "newest"} onChange={(e) => set("sort", e.target.value)}>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="name">Name (A–Z)</option>
+        <option value="rating">Top rated</option>
+        <option value="reviews">Most reviews</option>
+      </select>
+
       {/* ZIP lives on search_queries, not leads — filter by coverage instead.
           A lead-level ZIP filter needs relation-hop support in the client wrapper (TODO). */}
     </div>

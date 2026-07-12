@@ -129,6 +129,7 @@ export interface Leads {
   stage?: "scraped" | "qualified" | "building" | "proposed" | "sold" | "client";
   listing_health_score?: number;
   qualification_score?: number;
+  created_at?: string;
   search_query?: { id: string; label: string };
   agency?: { id: string; label: string };
   device?: { id: string; label: string };
@@ -154,11 +155,12 @@ export interface LeadsListOpts {
     stage?: "scraped" | "qualified" | "building" | "proposed" | "sold" | "client";
     listing_health_score?: number;
     qualification_score?: number;
+    created_at?: string;
     search_query?: string;
     agency?: string;
     device?: string;
   };
-  sort?: { field: "dedup_key" | "place_id" | "business_name" | "phone" | "website" | "has_website" | "address" | "hours" | "category" | "review_count" | "rating" | "review_bucket" | "claimed" | "photo_count" | "price_level" | "stage" | "listing_health_score" | "qualification_score" | "search_query" | "agency" | "device"; dir: "asc" | "desc" };
+  sort?: { field: "dedup_key" | "place_id" | "business_name" | "phone" | "website" | "has_website" | "address" | "hours" | "category" | "review_count" | "rating" | "review_bucket" | "claimed" | "photo_count" | "price_level" | "stage" | "listing_health_score" | "qualification_score" | "created_at" | "search_query" | "agency" | "device"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -183,6 +185,7 @@ export interface LeadsCreate {
   stage?: "scraped" | "qualified" | "building" | "proposed" | "sold" | "client";
   listing_health_score?: number;
   qualification_score?: number;
+  created_at?: string;
   search_query?: string;
   agency?: string;
   device?: string;
