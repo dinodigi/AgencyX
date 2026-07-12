@@ -18,18 +18,18 @@ if (existsSync(".env")) {
   }
 }
 
-const NATIVE = [
-  "better-sqlite3",
-  "keytar",
-  "electron",
-  "electron-updater",
-  // Playwright + stealth load from node_modules at runtime (not bundled).
-  "playwright-extra",
-  "playwright-core",
-  "playwright",
-  "puppeteer-extra-plugin-stealth",
-];
-const common = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, external: NATIVE };
+// Bundle only our source + @dinosales/* workspace TS; externalize every npm
+// package (and its transitive deps) so they load from node_modules at runtime.
+const externalizeNpm = {
+  name: "externalize-npm",
+  setup(b) {
+    b.onResolve({ filter: /^[^./]/ }, (args) => {
+      if (args.path.startsWith("@dinosales/")) return;
+      return { path: args.path, external: true };
+    });
+  },
+};
+const common = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, plugins: [externalizeNpm] };
 
 const server = await createServer({ configFile: "vite.config.ts" });
 await server.listen();
