@@ -30,6 +30,7 @@ const sqlite = canLoad("better-sqlite3");
 const keytar = canLoad("keytar");
 const electron = canLoad("electron");
 const token = Boolean(process.env.AGENTX_DELIVERY_TOKEN);
+const clerk = Boolean(process.env.VITE_CLERK_PUBLISHABLE_KEY);
 
 console.log(`
 Lead Engine — desktop preflight
@@ -39,8 +40,10 @@ Lead Engine — desktop preflight
  ${ok(sqlite)} better-sqlite3      ${sqlite ? "durable outbox" : "→ in-memory fallback (leads lost on quit)"}
  ${ok(keytar)} keytar              ${keytar ? "OS secure token store" : "→ 0600 file fallback (not OS-secure)"}
  ${ok(token)} AGENTX_DELIVERY_TOKEN ${token ? "set" : "unset → sign-in won't reach AgentX (mock runs still work)"}
+ ${ok(clerk)} VITE_CLERK_PUBLISHABLE_KEY ${clerk ? "set → real Clerk sign-in" : "unset → dev paste-form (mock testing)"}
 
  Mode: ${sqlite && keytar ? "FULL (native)" : "DEV FALLBACK — the app runs; scrape→outbox→UI all work"}
+ Auth: ${clerk ? "Clerk sign-in" : "dev paste-form"}
 ${sqlite && keytar ? "" : `
  To get FULL mode, build the native modules for Electron once:
    1. Install "Visual Studio Build Tools" with the "Desktop development with C++" workload

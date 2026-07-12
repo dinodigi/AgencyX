@@ -10,8 +10,8 @@ import type { AuthState, QueueItem, SyncStats, RunLogLine, RunState } from "../s
 const api = {
   auth: {
     getState: (): Promise<AuthState> => ipcRenderer.invoke("auth:getState"),
-    signIn: (a: { email: string; sessionToken: string; refreshToken?: string; orgId: string; expiresAt: number }): Promise<AuthState> =>
-      ipcRenderer.invoke("auth:signIn", a),
+    setSession: (a: { email: string; orgId: string; token: string; expiresAt: number }): Promise<AuthState> =>
+      ipcRenderer.invoke("auth:setSession", a),
     signOut: (): Promise<AuthState> => ipcRenderer.invoke("auth:signOut"),
   },
   queue: {

@@ -17,11 +17,11 @@ export function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      await window.leadEngine.auth.signIn({
+      await window.leadEngine.auth.setSession({
         email,
         orgId,
-        sessionToken: token.trim(),
-        // Dev default: 55 minutes. Real flow uses Clerk's actual expiry.
+        token: token.trim(),
+        // Dev default: 55 minutes. The real Clerk flow pushes actual expiries.
         expiresAt: Date.now() + 55 * 60 * 1000,
       });
     } catch (e) {

@@ -66,7 +66,9 @@ export interface OutboxLead {
 /** Invoke channels: renderer → main, request/response. */
 export interface IpcApi {
   "auth:getState": () => AuthState;
-  "auth:signIn": (args: { email: string; sessionToken: string; refreshToken?: string; orgId: string; expiresAt: number }) => AuthState;
+  // Set/refresh the signed-in session — called by the renderer's Clerk bridge
+  // (real) or the dev paste-form. Called repeatedly to push refreshed tokens.
+  "auth:setSession": (args: { email: string; orgId: string; token: string; expiresAt: number }) => AuthState;
   "auth:signOut": () => AuthState;
 
   "queue:list": () => QueueItem[];

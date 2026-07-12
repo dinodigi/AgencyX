@@ -9,8 +9,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type { AuthState, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
-import { initSecureStore } from "./secure-store.ts";
-import { AuthManager, type RefreshFn } from "./auth.ts";
+import { AuthManager, type SessionInput } from "./auth.ts";
 import { getOrCreateDeviceId } from "./device.ts";
 import { createOutbox, type OutboxStore } from "./outbox.ts";
 import { SyncEngine } from "./sync-engine.ts";
@@ -35,6 +34,7 @@ let deviceId = "";
 let runAbort: AbortController | null = null;
 let runState: RunState = { running: false, captured: 0 };
 let registration: Registration | null = null;
+let registeredOrgId: string | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 const HEARTBEAT_MS = 5 * 60 * 1000; // coarse — presence, not real-time (limits undocumented)
@@ -53,16 +53,6 @@ function log(level: RunLogLine["level"], message: string): void {
   // eslint-disable-next-line no-console
   console[level === "error" ? "error" : "log"](`[${level}] ${message}`);
 }
-
-/**
- * Clerk refresh hook. Real implementation calls Clerk's token endpoint with the
- * stored refresh material. Until the Clerk app is wired, this returns null,
- * which makes AuthManager sign out with a clear log rather than 401 mid-run.
- */
-const refreshFn: RefreshFn = async (_refreshToken) => {
-  // TODO(W1): call Clerk to mint a fresh session JWT from the refresh token.
-  return null;
-};
 
 async function createWindow(): Promise<void> {
   win = new BrowserWindow({
@@ -96,9 +86,7 @@ async function createWindow(): Promise<void> {
 
 function registerIpc(): void {
   ipcMain.handle("auth:getState", () => auth.getState());
-  ipcMain.handle("auth:signIn", (_e, a: { email: string; sessionToken: string; refreshToken?: string; orgId: string; expiresAt: number }) =>
-    auth.signIn(a),
-  );
+  ipcMain.handle("auth:setSession", (_e, a: SessionInput) => auth.setSession(a));
   ipcMain.handle("auth:signOut", () => auth.signOut());
 
   ipcMain.handle("queue:list", () => listQueue());
@@ -127,9 +115,14 @@ function registerIpc(): void {
 async function onAuthChanged(state: AuthState): Promise<void> {
   send("auth:changed", state);
   if (state.status === "signed-in" && state.orgId && state.email) {
-    if (!registration) await doRegister(state.orgId, state.email);
+    // Register on first sign-in or when the active org changed.
+    if (state.orgId !== registeredOrgId) {
+      registration = null;
+      await doRegister(state.orgId, state.email);
+    }
   } else {
     registration = null;
+    registeredOrgId = null;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = null;
   }
@@ -146,6 +139,7 @@ async function doRegister(orgId: string, email: string): Promise<void> {
       appVersion: app.getVersion(),
       email,
     });
+    registeredOrgId = orgId;
     log("info", `device registered (${deviceId.slice(0, 8)}…) to agency ${registration.agencyRowId.slice(0, 8)}…`);
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = setInterval(() => void beat(), HEARTBEAT_MS);
@@ -302,13 +296,12 @@ async function listQueue(): Promise<QueueItem[]> {
 
 app.whenReady().then(async () => {
   const userData = app.getPath("userData");
-  initSecureStore(join(userData, "auth-meta.json"), (msg) => log("warn", msg));
   deviceId = getOrCreateDeviceId(join(userData, "device-id"));
 
   outbox = createOutbox(join(userData, "outbox.sqlite3"), (msg) => log("warn", msg));
   if (!outbox.durable) log("warn", "outbox is in-memory (dev mode) — leads not persisted across restarts");
 
-  auth = new AuthManager(DELIVERY_TOKEN, refreshFn, (state: AuthState) => void onAuthChanged(state), log);
+  auth = new AuthManager(DELIVERY_TOKEN, (state: AuthState) => void onAuthChanged(state), log);
 
   sync = new SyncEngine({
     outbox,
@@ -318,7 +311,6 @@ app.whenReady().then(async () => {
   });
 
   registerIpc();
-  await auth.restore();
   await createWindow();
   sync.start();
 

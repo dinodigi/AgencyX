@@ -14,6 +14,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@clerk/clerk-react':
+        specifier: ^5.22.0
+        version: 5.61.8(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@dinosales/agentx-client':
         specifier: workspace:*
         version: link:../../packages/agentx-client

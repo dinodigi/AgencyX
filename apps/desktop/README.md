@@ -5,7 +5,7 @@ Windows-first Electron app. This is the W1 shell: login, secure token storage, l
 ## Architecture
 - **main** (`src/main`) — Node side. Owns the network, SQLite, tokens, and the AgentX client. `index.ts` wires it together.
   - `secure-store.ts` — tokens in Windows Credential Manager (keytar); non-secret metadata in a `0600` userData file.
-  - `auth.ts` — AgentX client + Clerk JWT **refresh loop** (JWTs are ~60s, runs are hours; AgentX only verifies, refresh is ours).
+  - `auth.ts` — a **mirror** of the renderer's auth: holds the AgentX client (delivery token + the user's JWT). The renderer owns sign-in and pushes fresh tokens via `auth:setSession`; main has no refresh loop and persists no token (Clerk persists its own session in the renderer).
   - `registration.ts` — on sign-in, idempotently ensures the org's **Agencies** row + the user's **Users** row + this install's **Devices** row via the delivery API (race-safe via each collection's unique key); a 5-min heartbeat refreshes `last_seen`. Its ids populate the run context so leads carry agency/device relations.
   - `outbox.ts` — SQLite buffer; leads write locally first (`dedup_key` UNIQUE), drained by the sync engine.
   - `sync-engine.ts` — drains the outbox via `syncLead()`; retry-safe with **no delivery idempotency** (unique-conflict → already-synced, the S1 spike contract).
@@ -50,10 +50,12 @@ Source-agnostic engine driving a `ScrapeSource`:
 - `runner.ts` — claim → scrape → convert (dedup key + buckets) → outbox → complete/fail. `runAdhoc` for the pre-registration loop.
 - `test/pipeline.test.ts` — 4 tests, **green** (`pnpm test`), prove the loop without Google.
 
+## Auth (Clerk, in the renderer)
+`VITE_CLERK_PUBLISHABLE_KEY` set → the renderer shows the **real Clerk sign-in** (`ClerkAuth.tsx`): sign in, pick/create an org, and `ClerkTokenBridge` pushes the session token to main and re-pushes a fresh one every 45s. Unset → the dev paste-form (`views/SignIn.tsx`) for mock testing. Both call `auth:setSession`, so main is identical either way.
+- **Prod caveat:** Clerk's cookie session doesn't work on `file://`. Dev (`pnpm dev`, served from localhost) is fine; a packaged build must serve the renderer over loopback — TODO before shipping.
+
 ## Not wired yet (tracked)
-- Clerk sign-in UI + real `refreshFn` (main `index.ts` returns null → clean sign-out instead of mid-run 401). Dev sign-in accepts a pasted JWT so the app runs against a real org now.
-- `AGENTX_DELIVERY_TOKEN` is read from env at build; move to a build-time define before shipping.
-- Device + agency registration (Devices/Agencies rows) → then `runQuery` queue-claim can replace `runAdhoc`, and leads carry the agency/device relations.
+- Serve the packaged renderer over loopback (for Clerk in prod).
 - Real Google selectors tuned on live output; coverage soft-gate before a run.
 
 ## Release pipeline (W1 exit gate)

@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import type { AuthState, QueueItem, SyncStats, RunLogLine } from "../shared/ipc.ts";
+import { clerkEnabled, ClerkApp } from "./ClerkAuth.tsx";
 import { SignIn } from "./views/SignIn.tsx";
 import { Dashboard } from "./views/Dashboard.tsx";
 
 export function App() {
+  // Real auth (Clerk in the Electron browser) when a publishable key is set;
+  // otherwise the dev paste-form driven by the main process's auth state.
+  return clerkEnabled ? <ClerkApp /> : <DevApp />;
+}
+
+function DevApp() {
   const [auth, setAuth] = useState<AuthState>({ status: "signed-out" });
   const [ready, setReady] = useState(false);
 
@@ -12,13 +19,15 @@ export function App() {
       setAuth(s);
       setReady(true);
     });
-    const off = window.leadEngine.on.authChanged(setAuth);
-    return off;
+    return window.leadEngine.on.authChanged(setAuth);
   }, []);
 
   if (!ready) return <div className="center muted">Starting…</div>;
-
-  return auth.status === "signed-in" ? <Dashboard auth={auth} /> : <SignIn />;
+  return auth.status === "signed-in" ? (
+    <Dashboard email={auth.email ?? ""} onSignOut={() => void window.leadEngine.auth.signOut()} />
+  ) : (
+    <SignIn />
+  );
 }
 
 /** Shared subscription hook used by the dashboard views. */
