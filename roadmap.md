@@ -55,13 +55,13 @@ Three parallel workstreams. Per §12.4: the desktop **release pipeline ships bef
 3. SQLite outbox **built** (`outbox.ts`) + sync engine **built** (`sync-engine.ts`) using `syncLead` (unique-conflict = already-synced, per S1 — no delivery idempotency exists) ✅. Offline detection + failed-requeue in place.
 4. Device identity **built** (`device.ts`, stable UUID in userData); coarse heartbeat helper in shared client. **TODO: register the Devices row + wire heartbeat into the drain loop.**
 
-### W2 — Scraper engine (the moat)
-1. Playwright + `playwright-extra` stealth on real Chrome channel; randomized viewport/UA, human pacing, jittered delays.
-2. Queue work loop: claim query via `pending→running` transition (rejected = another device won), scrape, post results, `running→completed`.
-3. Rich capture per §5.3 (placeId, claimed status, hours, ratings, photo count…); centralized selector module; "0 results" vs "selector miss" as distinct logged states.
-4. Cool-down/back-off path: CAPTCHA or anomalous response → pause device, log, surface in UI (never hammer through).
-5. Coverage soft-gate: before run, read SearchQueries by keyword+zip (equality filters), show "last scraped N days ago by X — refresh or skip?"
-6. Tune against a handful of real ZIPs; budget selector maintenance as an ongoing cost line from here on.
+### W2 — Scraper engine (the moat) — ARCHITECTURE BUILT ✅ (pipeline tested green)
+1. `playwright-extra` + stealth on real Chrome channel **built** (`scraper/google-source.ts`, dynamic-imported); randomized viewport/UA + human pacing **built** (`scraper/human.ts`). **TODO: tune selectors/timing on live output (§12.5) — the one step that needs a real machine + Google.**
+2. Source-agnostic engine (`scraper/engine.ts`) + runner (`scraper/runner.ts`) **built**: streams listings → converts to leads (dedup key + precomputed buckets) → outbox → sync. `runQuery` (claim `pending→running`, complete/fail) AND `runAdhoc` paths done. Queue-claim uses the S2 stamp-settle-verify protocol.
+3. Rich capture per §5.3 **built** (placeId/CID parse, claimed via "Claim this business" presence, ratings, hours, photo count…); centralized selectors (`scraper/selectors.ts`); "0 results" vs "selector miss" vs "blocked" are distinct outcomes.
+4. Cool-down/back-off **built**: `ScrapeBlockedError` → engine returns `blocked` + backoffMs, run stops, UI shows it (never hammers).
+5. **MockSource + 4 pipeline tests green** (scrape→outbox→status, dedup, CAPTCHA cool-down, lost-claim) — full loop proven without Google. Run controls wired into the desktop UI (dry-run default).
+6. **TODO: coverage soft-gate** (read SearchQueries by keyword+zip before a run); tune against real ZIPs; selector maintenance is now a standing cost line.
 
 ### W3 — Web app (Next.js App Router + Tailwind v4)
 Screens (§8): org onboarding (bootstrap ordering flow) · batch builder (keywords × ZIPs → chunked sequential delivery POSTs with progress + dedupKey upsert semantics) · lead table (filters on precomputed `hasWebsite`/`reviewBucket`/`claimed`/ZIP via one-hop relation; offset paging is fine at MVP) · coverage view (query SearchQueries by lastScrapedAt) · device status · live run log via changes SSE (reconnect with `?since`/Last-Event-ID) · settings.

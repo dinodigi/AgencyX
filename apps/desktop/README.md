@@ -21,10 +21,22 @@ Windows-first Electron app. This is the W1 shell: login, secure token storage, l
 ## Native modules
 `better-sqlite3` and `keytar` are native. Local installs skip their gyp compile (root `pnpm.neverBuiltDependencies`) since this repo may lack a C++ toolchain; **electron-builder rebuilds them for Electron's ABI at package time.** To run `pnpm dev` locally you need them built once for your Electron: install the VS C++ Build Tools, then `pnpm rebuild better-sqlite3 keytar` (or `electron-rebuild`).
 
+## Scraper (W2 — `src/main/scraper`)
+Source-agnostic engine driving a `ScrapeSource`:
+- `types.ts` — `ScrapeSource`/`ScrapeOutcome`, `ScrapeBlockedError`, `SelectorMissError`.
+- `google-source.ts` — real Playwright/Chrome + stealth (dynamic-imported; **selectors need tuning on live output, §12.5**).
+- `mock-source.ts` — deterministic listings for tests + dry-run.
+- `selectors.ts` — all Google Maps anchors (one-file fix), placeId/CID + rating parsing.
+- `human.ts` — jittered delays, viewport/UA randomization (the anti-detection pacing).
+- `engine.ts` — one run; cool-down on CAPTCHA; distinct completed/zero-results/blocked/error outcomes.
+- `runner.ts` — claim → scrape → convert (dedup key + buckets) → outbox → complete/fail. `runAdhoc` for the pre-registration loop.
+- `test/pipeline.test.ts` — 4 tests, **green** (`pnpm test`), prove the loop without Google.
+
 ## Not wired yet (tracked)
 - Clerk sign-in UI + real `refreshFn` (main `index.ts` returns null → clean sign-out instead of mid-run 401). Dev sign-in accepts a pasted JWT so the app runs against a real org now.
 - `AGENTX_DELIVERY_TOKEN` is read from env at build; move to a build-time define before shipping.
-- Scraper engine (W2) and its queue-claim calls (`claimQuery` already in the shared client).
+- Device + agency registration (Devices/Agencies rows) → then `runQuery` queue-claim can replace `runAdhoc`, and leads carry the agency/device relations.
+- Real Google selectors tuned on live output; coverage soft-gate before a run.
 
 ## Release pipeline (W1 exit gate)
 `.github/workflows/desktop-release.yml` (tag-triggered) → electron-builder → GitHub Releases → electron-updater self-update. Needs the Authenticode cert secrets (`CSC_LINK`, `CSC_KEY_PASSWORD`) — roadmap open decision #2. **Prove this end-to-end on a dummy build before W2.**

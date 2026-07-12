@@ -40,6 +40,15 @@ export interface RunLogLine {
   message: string;
 }
 
+export interface RunState {
+  running: boolean;
+  keyword?: string;
+  zip?: string;
+  captured: number;
+  /** Last finished run's outcome kind, for the UI. */
+  lastOutcome?: string;
+}
+
 /** Local-first lead record as it sits in the SQLite outbox. */
 export interface OutboxLead {
   localId: number;
@@ -68,6 +77,10 @@ export interface IpcApi {
 
   "device:getInfo": () => { deviceId: string; platform: string; appVersion: string };
 
+  "run:start": (args: { keyword: string; zip: string; mock?: boolean }) => RunState;
+  "run:stop": () => RunState;
+  "run:getState": () => RunState;
+
   "update:check": () => { status: "checking" | "current" | "available" | "downloading" | "ready" | "error"; version?: string };
 }
 
@@ -76,6 +89,7 @@ export interface IpcEvents {
   "auth:changed": AuthState;
   "sync:changed": SyncStats;
   "queue:changed": QueueItem[];
+  "run:changed": RunState;
   "log:line": RunLogLine;
   "update:status": { status: string; version?: string; percent?: number };
 }

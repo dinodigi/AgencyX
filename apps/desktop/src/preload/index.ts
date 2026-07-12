@@ -5,7 +5,7 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
-import type { AuthState, QueueItem, SyncStats, RunLogLine } from "../shared/ipc.ts";
+import type { AuthState, QueueItem, SyncStats, RunLogLine, RunState } from "../shared/ipc.ts";
 
 const api = {
   auth: {
@@ -25,10 +25,16 @@ const api = {
   device: {
     getInfo: (): Promise<{ deviceId: string; platform: string; appVersion: string }> => ipcRenderer.invoke("device:getInfo"),
   },
+  run: {
+    start: (args: { keyword: string; zip: string; mock?: boolean }): Promise<RunState> => ipcRenderer.invoke("run:start", args),
+    stop: (): Promise<RunState> => ipcRenderer.invoke("run:stop"),
+    getState: (): Promise<RunState> => ipcRenderer.invoke("run:getState"),
+  },
   on: {
     authChanged: (cb: (s: AuthState) => void) => subscribe("auth:changed", cb),
     syncChanged: (cb: (s: SyncStats) => void) => subscribe("sync:changed", cb),
     queueChanged: (cb: (q: QueueItem[]) => void) => subscribe("queue:changed", cb),
+    runChanged: (cb: (r: RunState) => void) => subscribe("run:changed", cb),
     logLine: (cb: (l: RunLogLine) => void) => subscribe("log:line", cb),
     updateStatus: (cb: (u: { status: string; version?: string; percent?: number }) => void) => subscribe("update:status", cb),
   },

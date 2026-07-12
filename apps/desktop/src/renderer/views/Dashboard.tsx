@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AuthState } from "../../shared/ipc.ts";
 import { useLiveState } from "../App.tsx";
 import { QueuePanel } from "./QueuePanel.tsx";
+import { RunControls } from "./RunControls.tsx";
 import { RunLog } from "./RunLog.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 
@@ -25,7 +26,10 @@ export function Dashboard({ auth }: { auth: AuthState }) {
       </header>
 
       <main className="grid">
-        <QueuePanel queue={queue} />
+        <div className="col">
+          <RunControls />
+          <QueuePanel queue={queue} />
+        </div>
         <RunLog lines={log} />
       </main>
 
