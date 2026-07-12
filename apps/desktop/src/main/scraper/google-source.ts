@@ -1,13 +1,19 @@
 /**
- * Real Google Maps source (§5.2). Playwright driving a REAL Chrome channel
- * (channel:"chrome", not bundled headless Chromium — headless carries automation
- * fingerprints), with playwright-extra + the stealth plugin, randomized
- * viewport/UA, real scrolling, and jittered delays.
+ * Real Google Maps source (§5.2), TWO-PHASE (as designed):
  *
- * Selectors live in selectors.ts (one-file fix). This class is the mechanics;
- * the selectors + timing are what you TUNE against real output (roadmap §12.5).
- * Requires: pnpm add playwright-extra puppeteer-extra-plugin-stealth (declared in
- * package.json). Modules are dynamic-imported so the mock path never loads them.
+ *   Phase 1 — harvest the feed: scroll the results list and read each card's
+ *     quick-preview data (name, rating, reviews, category, address) directly from
+ *     the feed. Fast, low-risk, and gets SOMETHING for every result.
+ *   Phase 2 — open each listing: navigate into the place page and read the rich
+ *     detail the card doesn't have (phone, website, hours, claimed status).
+ *
+ * Each yielded lead is the card data enriched with detail — so even if a
+ * listing's detail fails to load, the phase-1 preview still produces a lead.
+ *
+ * Extraction runs IN THE PAGE via page.evaluate with multiple fallbacks, so a
+ * single renamed class doesn't wipe a field. Playwright drives a real Chrome
+ * channel with the stealth plugin. Selectors still drift — logs narrate each
+ * phase so tuning is targeted (roadmap §12.5).
  */
 
 import type { RawListing } from "@dinosales/types";
@@ -16,25 +22,16 @@ import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
 import { actionDelay, betweenListingsDelay, randomUserAgent, randomViewport, sleep, randInt } from "./human.ts";
 import { MAPS, placeIdFromUrl } from "./selectors.ts";
 
-// Minimal Playwright surface we depend on — declared locally so this file
-// typechecks without the package installed. The runtime objects are the real
-// Playwright ones (dynamic-imported below).
+// Minimal Playwright surface we depend on (declared locally so this file
+// typechecks without the package installed; the runtime objects are real).
 interface PwLocator {
   count(): Promise<number>;
-  first(): PwLocator;
-  nth(i: number): PwLocator;
-  getAttribute(name: string): Promise<string | null>;
-  textContent(): Promise<string | null>;
-  isVisible(): Promise<boolean>;
-  click(opts?: { timeout?: number }): Promise<void>;
-  scrollIntoViewIfNeeded(opts?: { timeout?: number }): Promise<void>;
 }
 interface PwPage {
   goto(url: string, opts?: { waitUntil?: string; timeout?: number }): Promise<unknown>;
   locator(selector: string): PwLocator;
   url(): string;
-  mouse: { wheel(dx: number, dy: number): Promise<void> };
-  waitForTimeout(ms: number): Promise<void>;
+  evaluate<R>(fn: () => R): Promise<R>;
 }
 interface PwContext {
   newPage(): Promise<PwPage>;
@@ -44,10 +41,28 @@ interface PwBrowser {
   close(): Promise<void>;
 }
 
+/** Raw card data harvested from the feed in phase 1 (in-page shapes). */
+interface CardRaw {
+  href: string;
+  name: string;
+  ratingLabel: string; // "4.7 stars 123 reviews" (aria-label on the stars)
+  ratingText: string; // "4.7"
+  reviewText: string; // "(123)"
+  infoText: string; // "Plumber · 123 Main St · Open"
+}
+
+/** Detail fields harvested from a place page in phase 2. */
+interface DetailRaw {
+  phone: string | null;
+  website: string | null;
+  address: string | null;
+  hours: string | null;
+  priceLevel: string | null;
+  claimed: boolean;
+}
+
 export interface GoogleSourceConfig {
-  /** Override Chrome channel; default "chrome" (system Google Chrome). */
   channel?: string;
-  /** Max scroll passes over the feed before giving up. */
   maxScrolls?: number;
 }
 
@@ -59,7 +74,6 @@ export class GoogleMapsSource implements ScrapeSource {
   constructor(private cfg: GoogleSourceConfig = {}) {}
 
   async open(): Promise<void> {
-    // Dynamic import keeps playwright-extra out of the mock/test path.
     const { chromium } = (await import("playwright-extra")) as unknown as {
       chromium: { use(p: unknown): void; launch(o: Record<string, unknown>): Promise<PwBrowser> };
     };
@@ -86,78 +100,66 @@ export class GoogleMapsSource implements ScrapeSource {
 
   async *search(query: ScrapeQuery, opts: ScrapeSourceOptions): AsyncIterable<RawListing> {
     if (!this.ctx) throw new Error("source not open()ed");
-    const url = MAPS.searchUrl(query.keyword, query.zip);
-    opts.onLog("info", `Chrome launched — opening Google Maps: "${query.keyword}" in ${query.zip}`);
     const page = await this.ctx.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    opts.onLog("info", `Chrome launched — opening Google Maps: "${query.keyword}" in ${query.zip}`);
+    await page.goto(MAPS.searchUrl(query.keyword, query.zip), { waitUntil: "domcontentloaded", timeout: 30000 });
     await actionDelay(opts.signal);
     opts.onLog("info", `page loaded (${page.url().slice(0, 70)}…)`);
 
-    // Google frequently shows a consent/cookie wall first — a common reason a
-    // real run captures nothing. Detect + explain rather than fail silently.
     if (/consent\.google|\/consent/i.test(page.url())) {
-      opts.onLog("warn", "Google is showing a consent page — scraping is blocked until it's dismissed (selector-tuning item)");
+      opts.onLog("warn", "Google is showing a consent page — dismiss it once in the Chrome window, then re-run");
     }
     await this.assertNotBlocked(page);
 
-    // Empty search vs broken selector are distinct, logged states (§5.2).
-    if ((await page.locator(MAPS.noResults).count()) > 0) {
-      opts.onLog("info", `Google returned no results for "${query.keyword}" in ${query.zip}`);
+    if ((await page.locator(MAPS.resultsFeed).count()) === 0) {
+      opts.onLog("error", "results feed not found — Google's layout changed vs our selectors (tune selectors.ts)");
+      throw new SelectorMissError("resultsFeed", "results feed not found");
+    }
+
+    // ── Phase 1: harvest the feed ──────────────────────────────────────────
+    opts.onLog("info", "phase 1 — scrolling the map view and reading preview cards…");
+    const cards = await this.harvestFeed(page, opts);
+    if (cards.length === 0) {
+      opts.onLog("warn", "no result cards read from the feed (card selectors need tuning)");
       return;
     }
-    const feed = page.locator(MAPS.resultsFeed);
-    if ((await feed.count()) === 0) {
-      opts.onLog("error", "results feed not found — Google's layout changed vs our selectors (needs tuning; see selectors.ts)");
-      throw new SelectorMissError("resultsFeed", "results feed not found — DOM may have changed");
-    }
-    opts.onLog("info", "results feed found — reading listings");
+    const targets = cards.slice(0, opts.maxLeads);
+    const sample = targets[0]!;
+    opts.onLog("info", `phase 1 — ${targets.length} businesses in the map view. sample: "${sample.name}" | rating "${sample.ratingLabel || sample.ratingText}" | info "${sample.infoText.slice(0, 60)}"`);
 
-    const seen = new Set<string>();
-    let scrolls = 0;
-    const maxScrolls = this.cfg.maxScrolls ?? 25;
-
-    while (seen.size < opts.maxLeads && scrolls < maxScrolls) {
+    // ── Phase 2: open each listing for detail ──────────────────────────────
+    opts.onLog("info", "phase 2 — opening each listing for phone / website / hours…");
+    let done = 0;
+    for (const c of targets) {
       if (opts.signal.aborted) return;
-      const cards = page.locator(MAPS.resultCard);
-      const n = await cards.count();
-      opts.onLog("info", `scroll pass ${scrolls + 1}: ${n} cards on screen, ${seen.size} captured so far`);
+      const quick = this.parseCard(c);
 
-      for (let i = 0; i < n && seen.size < opts.maxLeads; i++) {
-        if (opts.signal.aborted) return;
-        const card = cards.nth(i);
-        const href = (await card.getAttribute("href")) ?? "";
-        // The card's aria-label IS the business name — the reliable source (the
-        // detail h1 can be the "Results" heading). Also the dedup fallback.
-        const cardName = (await card.getAttribute("aria-label"))?.trim() || undefined;
-        const placeId = placeIdFromUrl(href) ?? (cardName ? `name:${cardName.toLowerCase().replace(/\s+/g, "-")}` : null);
-        if (!placeId || seen.has(placeId)) continue;
-        seen.add(placeId);
-
-        try {
-          await card.scrollIntoViewIfNeeded({ timeout: 5000 });
-          await actionDelay(opts.signal);
-          await card.click({ timeout: 8000 });
-          await actionDelay(opts.signal);
-          await this.assertNotBlocked(page);
-          const listing = await this.extractDetail(page, placeId, cardName);
-          if (listing) {
-            yield listing;
-          } else {
-            opts.onLog("warn", `listing ${i + 1}: no business name found (skipped)`);
-          }
-        } catch (err) {
-          if (err instanceof ScrapeBlockedError) throw err;
-          opts.onLog("warn", `listing ${i + 1} skipped: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        await betweenListingsDelay(opts.signal);
+      let detail: DetailRaw | null = null;
+      try {
+        await page.goto(c.href, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await actionDelay(opts.signal);
+        await this.assertNotBlocked(page);
+        detail = await this.extractDetail(page);
+      } catch (err) {
+        if (err instanceof ScrapeBlockedError) throw err;
+        opts.onLog("warn", `"${quick.businessName}": detail failed (${err instanceof Error ? err.message : String(err)}) — preview only`);
       }
 
-      // Scroll the feed to load more, human-ish.
-      await page.mouse.wheel(0, randInt(600, 1400));
-      await sleep(randInt(700, 1600), opts.signal);
-      scrolls++;
+      yield {
+        ...quick,
+        phone: detail?.phone ?? undefined,
+        website: detail?.website ?? undefined,
+        address: detail?.address ?? quick.address,
+        hours: detail?.hours ?? undefined,
+        priceLevel: detail?.priceLevel ?? undefined,
+        claimed: detail?.claimed,
+      } satisfies RawListing;
+
+      done++;
+      opts.onLog("info", `phase 2 — ${done}/${targets.length}: ${quick.businessName}`);
+      await betweenListingsDelay(opts.signal);
     }
-    opts.onLog("info", `done — ${seen.size} listings captured`);
+    opts.onLog("info", `done — ${done} businesses captured`);
   }
 
   private async assertNotBlocked(page: PwPage): Promise<void> {
@@ -166,55 +168,101 @@ export class GoogleMapsSource implements ScrapeSource {
     }
   }
 
-  private async extractDetail(page: PwPage, placeId: string, cardName?: string): Promise<RawListing | null> {
-    const d = MAPS.detail;
-    const text = async (sel: string): Promise<string | undefined> => {
-      const loc = page.locator(sel).first();
-      if ((await loc.count()) === 0) return undefined;
-      return (await loc.textContent())?.trim() || undefined;
-    };
-    const attr = async (sel: string, name: string): Promise<string | undefined> => {
-      const loc = page.locator(sel).first();
-      if ((await loc.count()) === 0) return undefined;
-      return (await loc.getAttribute(name)) ?? undefined;
-    };
-
-    // Prefer the name from the card; fall back to the detail h1.
-    const businessName = cardName ?? (await text(d.name));
-    if (!businessName) return null; // no name anywhere — skip rather than store junk
-
-    // Rating: the visible number span, else the "N stars" aria-label. Reject
-    // anything outside 0–5 (so a stray number never lands as a rating).
-    let rating: number | undefined;
-    const ratingText = (await text(d.ratingValue)) ?? (await attr(d.starsLabel, "aria-label"));
-    const rMatch = ratingText?.match(/([\d.]+)/);
-    if (rMatch) {
-      const parsed = Number(rMatch[1]);
-      if (parsed >= 0 && parsed <= 5) rating = parsed;
+  /** Phase 1: scroll the feed to load cards, then read them all in one in-page pass. */
+  private async harvestFeed(page: PwPage, opts: ScrapeSourceOptions): Promise<CardRaw[]> {
+    const maxScrolls = this.cfg.maxScrolls ?? 20;
+    let prev = -1;
+    for (let s = 0; s < maxScrolls; s++) {
+      if (opts.signal.aborted) break;
+      const count = await page.evaluate(() => {
+        const feed = document.querySelector('div[role="feed"]');
+        if (feed) feed.scrollTop = feed.scrollHeight;
+        return feed ? feed.querySelectorAll('a[href*="/maps/place/"]').length : 0;
+      });
+      if (count >= opts.maxLeads) break;
+      if (count === prev) break; // no new cards loaded — reached the end
+      prev = count;
+      await sleep(randInt(900, 1700), opts.signal);
     }
-    // Reviews: a span/button whose aria-label reads "N reviews" (or its text).
-    let reviewCount: number | undefined;
-    const reviewsText = (await attr(d.reviewsCount, "aria-label")) ?? (await text(d.reviewsCount));
-    const revMatch = reviewsText?.replace(/,/g, "").match(/(\d+)/);
-    if (revMatch) reviewCount = Number(revMatch[1]);
-    const website = await attr(d.website, "href");
-    const claimVisible = (await page.locator(d.claimLink).count()) > 0;
-    const phoneLabel = await attr(d.phone, "aria-label");
-    const phoneId = await attr(d.phone, "data-item-id");
-    const hours = (await attr(d.hours, "aria-label")) ?? (await text(d.hours));
 
-    return {
-      placeId,
-      businessName,
-      phone: phoneLabel?.replace(/^Phone:\s*/i, "") ?? phoneId?.replace(/^phone:tel:/i, "") ?? undefined,
-      website: website ?? undefined,
-      address: (await attr(d.address, "aria-label"))?.replace(/^Address:\s*/i, "") ?? undefined,
-      category: await text(d.category),
-      hours: hours || undefined,
-      reviewCount,
-      rating,
-      claimed: !claimVisible, // "Claim this business" present ⇒ unclaimed
-      priceLevel: (await attr(d.priceLevel, "aria-label"))?.replace(/^Price:\s*/i, "") ?? undefined,
-    } satisfies RawListing;
+    return page.evaluate(() => {
+      const feed = document.querySelector('div[role="feed"]');
+      if (!feed) return [] as CardRaw[];
+      const out: CardRaw[] = [];
+      const seen = new Set<string>();
+      for (const a of Array.from(feed.querySelectorAll<HTMLAnchorElement>('a[href*="/maps/place/"]'))) {
+        const href = a.href;
+        const name = a.getAttribute("aria-label") ?? "";
+        if (!name || seen.has(href)) continue;
+        seen.add(href);
+        // Walk up to the card container to find the rating/info siblings.
+        let card: HTMLElement = a;
+        for (let i = 0; i < 5 && card.parentElement; i++) {
+          card = card.parentElement;
+          if (/Nv2PK|bfdHYd|lI9IFe/.test(card.className)) break;
+        }
+        const stars = card.querySelector('span[role="img"][aria-label]');
+        out.push({
+          href,
+          name,
+          ratingLabel: stars?.getAttribute("aria-label") ?? "",
+          ratingText: card.querySelector(".MW4etd")?.textContent?.trim() ?? "",
+          reviewText: card.querySelector(".UY7F9")?.textContent?.trim() ?? "",
+          infoText: card.querySelector(".W4Efsd")?.textContent?.trim() ?? "",
+        });
+      }
+      return out;
+    });
+  }
+
+  /** Turn phase-1 card data into the baseline lead (name/rating/reviews/category/address). */
+  private parseCard(c: CardRaw): RawListing {
+    const placeId = placeIdFromUrl(c.href) ?? `name:${c.name.toLowerCase().replace(/\s+/g, "-")}`;
+
+    // Rating: from the "4.7 stars 123 reviews" label, else the bare number span.
+    let rating: number | undefined;
+    let reviewCount: number | undefined;
+    const rl = c.ratingLabel.match(/([\d.]+)\s*stars?/i);
+    if (rl) rating = Number(rl[1]);
+    else if (c.ratingText) {
+      const n = Number(c.ratingText.replace(",", "."));
+      if (n >= 0 && n <= 5) rating = n;
+    }
+    if (rating !== undefined && (rating < 0 || rating > 5 || Number.isNaN(rating))) rating = undefined;
+    const revl = c.ratingLabel.match(/([\d,]+)\s*reviews?/i) ?? c.reviewText.match(/([\d,]+)/);
+    if (revl) reviewCount = Number(revl[1]!.replace(/,/g, "")) || undefined;
+
+    // Category + address from the info line "Category · Address · Open …".
+    const parts = c.infoText
+      .split(/·|⋅/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const category = parts[0] && !/\d{2,}/.test(parts[0]) ? parts[0] : undefined;
+    const address = parts.find((p) => /\d/.test(p) && !/^\d+(\.\d+)?$/.test(p));
+
+    return { placeId, businessName: c.name, rating, reviewCount, category, address };
+  }
+
+  /** Phase 2: read the detail panel of the currently-open place page, in-page. */
+  private extractDetail(page: PwPage): Promise<DetailRaw> {
+    return page.evaluate(() => {
+      const attr = (sel: string, a: string): string | null => document.querySelector(sel)?.getAttribute(a) ?? null;
+      const clean = (v: string | null, re: RegExp): string | null => (v ? v.replace(re, "").trim() || null : null);
+
+      const phone =
+        clean(attr('button[data-item-id^="phone:tel:"]', "aria-label"), /^Phone:\s*/i) ??
+        clean(attr('button[data-item-id^="phone:tel:"]', "data-item-id"), /^phone:tel:/i);
+      const website = attr('a[data-item-id="authority"]', "href");
+      const address = clean(attr('button[data-item-id="address"]', "aria-label"), /^Address:\s*/i);
+      const hours =
+        attr('[jsaction*="openhours"] [aria-label]', "aria-label") ??
+        document.querySelector(".t39EBf")?.getAttribute("aria-label") ??
+        document.querySelector(".t39EBf")?.textContent?.trim() ??
+        null;
+      const priceLevel = clean(attr('[aria-label*="Price:" i]', "aria-label"), /^Price:\s*/i);
+      const claimed = !document.querySelector('a[href*="/maps/business"], button[aria-label*="Claim this business" i]');
+
+      return { phone, website, address, hours, priceLevel, claimed };
+    });
   }
 }
