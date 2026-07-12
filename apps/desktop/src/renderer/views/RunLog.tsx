@@ -9,7 +9,7 @@ export function RunLog({ lines }: { lines: RunLogLine[] }) {
   }, [lines.length]);
 
   return (
-    <section className="card panel">
+    <section className="card panel fixed">
       <div className="panel-head">
         <h2>Run log</h2>
       </div>

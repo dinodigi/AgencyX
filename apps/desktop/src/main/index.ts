@@ -8,7 +8,8 @@
 
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import type { AuthState, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
+import type { AuthState, CapturedLead, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
+import type { RawListing } from "@dinosales/types";
 import { AuthManager, type SessionInput } from "./auth.ts";
 import { getOrCreateDeviceId } from "./device.ts";
 import { createOutbox, type OutboxStore } from "./outbox.ts";
@@ -102,7 +103,7 @@ function registerIpc(): void {
   }));
 
   ipcMain.handle("run:getState", () => runState);
-  ipcMain.handle("run:start", (_e, args: { keyword: string; zip: string; mock?: boolean }) => startRun(args));
+  ipcMain.handle("run:start", (_e, args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }) => startRun(args));
   ipcMain.handle("run:claimNext", () => claimNextRun());
   ipcMain.handle("run:stop", () => stopRun());
 }
@@ -158,19 +159,36 @@ async function beat(): Promise<void> {
   }
 }
 
+function toCaptured(l: RawListing): CapturedLead {
+  return {
+    at: Date.now(),
+    placeId: l.placeId,
+    businessName: l.businessName,
+    address: l.address,
+    phone: l.phone,
+    website: l.website,
+    hasWebsite: Boolean(l.website && l.website.length > 0),
+    category: l.category,
+    reviewCount: l.reviewCount,
+    rating: l.rating,
+    claimed: l.claimed,
+  };
+}
+
 /** Build a runner whose claim/complete/fail drive the real search_queries workflow. */
-function makeRunner(useRealSource: boolean): ScrapeRunner {
+function makeRunner(useRealSource: boolean, maxLeads = 80): ScrapeRunner {
   const client = auth.getClient()!;
   return new ScrapeRunner({
     outbox,
-    makeSource: (): ScrapeSource => (useRealSource ? new GoogleMapsSource() : new MockSource({ count: 8 })),
+    makeSource: (): ScrapeSource => (useRealSource ? new GoogleMapsSource() : new MockSource()),
     claim: (queryId, deviceRowId) => client.claimQuery(queryId, deviceRowId),
     complete: (queryId, count, iso) => client.completeQuery(queryId, count, iso),
     fail: (queryId) => client.failQuery(queryId),
     onLog: log,
     onOutcome: (o) => setRunState({ lastOutcome: o.kind }),
+    onCaptured: (listing) => send("lead:captured", toCaptured(listing)),
     now: () => new Date().toISOString(),
-    maxLeads: 80,
+    maxLeads,
   });
 }
 
@@ -183,7 +201,7 @@ function setRunState(patch: Partial<RunState>): void {
   send("run:changed", runState);
 }
 
-async function startRun(args: { keyword: string; zip: string; mock?: boolean }): Promise<RunState> {
+async function startRun(args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }): Promise<RunState> {
   const state = auth.getState();
   if (state.status !== "signed-in" || !state.orgId) {
     log("error", "cannot run: not signed in");
@@ -199,7 +217,7 @@ async function startRun(args: { keyword: string; zip: string; mock?: boolean }):
 
   // Ad-hoc run: no queue row to claim; leads carry agency/device if registered.
   const ctx = currentContext(state.orgId);
-  void makeRunner(args.mock === false)
+  void makeRunner(args.mock === false, args.maxLeads)
     .runAdhoc(args.keyword, args.zip, ctx, runAbort.signal)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });

@@ -30,6 +30,8 @@ export interface ScrapeRunnerDeps {
   fail: (queryId: string) => Promise<void>;
   onLog: (level: "info" | "warn" | "error", message: string) => void;
   onOutcome: (outcome: ScrapeOutcome) => void;
+  /** Called per captured listing (for the live table); receives the raw listing. */
+  onCaptured?: (listing: RawListing) => void;
   /** ISO timestamp provider (injected so it's testable/deterministic). */
   now: () => string;
   maxLeads?: number;
@@ -67,6 +69,7 @@ export class ScrapeRunner {
   }
 
   private enqueueListing(listing: RawListing, ctx: RunContext, queryId: string | undefined): "queued" | "duplicate" {
+    this.deps.onCaptured?.(listing);
     const lead = this.toLead(listing, ctx, queryId);
     return this.deps.outbox.enqueue(
       {

@@ -40,6 +40,21 @@ export interface RunLogLine {
   message: string;
 }
 
+/** A lead as it's captured mid-scrape — streamed to the live table. */
+export interface CapturedLead {
+  at: number;
+  placeId: string;
+  businessName: string;
+  address?: string;
+  phone?: string;
+  website?: string;
+  hasWebsite: boolean;
+  category?: string;
+  reviewCount?: number;
+  rating?: number;
+  claimed?: boolean;
+}
+
 export interface RunState {
   running: boolean;
   keyword?: string;
@@ -79,7 +94,7 @@ export interface IpcApi {
 
   "device:getInfo": () => { deviceId: string; platform: string; appVersion: string };
 
-  "run:start": (args: { keyword: string; zip: string; mock?: boolean }) => RunState;
+  "run:start": (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }) => RunState;
   "run:claimNext": () => RunState;
   "run:stop": () => RunState;
   "run:getState": () => RunState;
@@ -94,6 +109,7 @@ export interface IpcEvents {
   "queue:changed": QueueItem[];
   "run:changed": RunState;
   "log:line": RunLogLine;
+  "lead:captured": CapturedLead;
   "update:status": { status: string; version?: string; percent?: number };
 }
 

@@ -162,6 +162,55 @@ button.ghost.tiny {
   gap: 12px;
   min-height: 0;
 }
+.col > .grow {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.col > .fixed {
+  flex: 0 0 220px;
+  min-height: 0;
+}
+
+.leads-scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+table.leads {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+table.leads th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 6px 12px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+table.leads td {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.lead-name {
+  font-weight: 500;
+}
+.ok {
+  color: var(--completed);
+}
+.num-input {
+  width: 68px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
 .runctl-body {
   padding: 12px 14px;
   display: flex;

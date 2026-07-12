@@ -1,22 +1,44 @@
 /**
- * Deterministic fake source. Produces believable RawListings for a keyword+zip
- * with human-paced delays, so the whole pipeline (engine → outbox → sync) can be
- * exercised end-to-end without touching Google (no ToS exposure, no browser).
- * Used by the pipeline test and by a "dry run" toggle in the app.
+ * Deterministic-ish fake source. Produces believable RawListings for a
+ * keyword+zip with human-paced delays, so the whole pipeline (engine → outbox →
+ * sync) can be exercised without touching Google (no ToS exposure, no browser).
+ *
+ * Each run uses a fresh seed, so re-running yields NEW leads (not dedup-to-0),
+ * and addresses use the ACTUAL zip (no hardcoded city). The real GoogleMapsSource
+ * is what actually respects location — this is placeholder data for testing.
  */
 
 import type { RawListing } from "@dinosales/types";
 import type { ScrapeQuery, ScrapeSource, ScrapeSourceOptions } from "./types.ts";
-import { actionDelay, betweenListingsDelay } from "./human.ts";
+import { actionDelay, betweenListingsDelay, randInt } from "./human.ts";
 
-const FIRST = ["Joe's", "Austin", "Barton", "South Congress", "Lone Star", "Hill Country", "Capital", "Bluebonnet"];
-const KIND = ["Plumbing", "Plumbers", "Pipe Pros", "Rooter", "Services"];
+const PREFIX = [
+  "Prime",
+  "Metro",
+  "Elite",
+  "Rapid",
+  "Summit",
+  "Pioneer",
+  "Allstar",
+  "Reliable",
+  "Apex",
+  "Vanguard",
+  "Blue Ribbon",
+  "First Choice",
+];
+const STREETS = ["Main St", "Oak Ave", "Elm St", "Park Ave", "2nd St", "Market St", "Broadway", "Hill St", "Lake Dr"];
 
 export interface MockSourceConfig {
-  /** How many listings to yield per search (clamped to opts.maxLeads). */
+  /** Fixed count (tests). Omit for a realistic random count per run. */
   count?: number;
   /** Simulate a CAPTCHA after N listings to exercise the cool-down path. */
   blockAfter?: number;
+  /** Fixed seed (tests). Omit to vary per run. */
+  seed?: number;
+}
+
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export class MockSource implements ScrapeSource {
@@ -27,8 +49,12 @@ export class MockSource implements ScrapeSource {
   async close(): Promise<void> {}
 
   async *search(query: ScrapeQuery, opts: ScrapeSourceOptions): AsyncIterable<RawListing> {
-    const want = Math.min(this.cfg.count ?? 6, opts.maxLeads);
-    opts.onLog("info", `[mock] searching "${query.keyword}" in ${query.zip} — up to ${want} listings`);
+    const seed = this.cfg.seed ?? Date.now() % 100000;
+    const want = Math.min(this.cfg.count ?? randInt(6, 14), opts.maxLeads);
+    const kw = query.keyword.trim() || "business";
+    const noun = kw.replace(/s$/i, "");
+    const label = noun ? titleCase(noun) : titleCase(kw);
+    opts.onLog("info", `[mock] searching "${kw}" in ${query.zip} — up to ${want} listings`);
 
     for (let i = 0; i < want; i++) {
       if (opts.signal.aborted) return;
@@ -40,21 +66,27 @@ export class MockSource implements ScrapeSource {
       }
 
       await actionDelay(opts.signal);
-      const name = `${FIRST[i % FIRST.length]} ${KIND[i % KIND.length]}`;
-      const hasWebsite = i % 3 !== 0;
-      const reviewCount = [0, 4, 37, 214, 512][i % 5]!;
+      const n = seed + i;
+      const prefix = PREFIX[n % PREFIX.length]!;
+      const name = `${prefix} ${label}`;
+      const hasWebsite = n % 3 !== 0;
+      const reviewCount = [0, 5, 23, 88, 240, 512][n % 6]!;
+      const streetNo = 100 + ((n * 37) % 8900);
+
       yield {
-        placeId: `0x8644b${(1000 + i).toString(16)}:0x${(i * 7919).toString(16)}`,
+        // Unique per run so re-runs produce fresh leads.
+        placeId: `mock:${seed.toString(36)}:${i}`,
         businessName: name,
-        phone: `512-555-0${(100 + i).toString().padStart(3, "0")}`,
-        website: hasWebsite ? `https://${name.toLowerCase().replace(/[^a-z]+/g, "")}.com` : undefined,
-        address: `${100 + i} S Congress Ave, Austin, TX ${query.zip}`,
-        category: "Plumber",
-        hours: "Mon-Fri 8AM-6PM",
+        phone: `(555) ${String(100 + i).padStart(3, "0")}-${String(n % 10000).padStart(4, "0")}`,
+        website: hasWebsite ? `https://${prefix.toLowerCase().replace(/\s+/g, "")}${noun.toLowerCase()}.example` : undefined,
+        // Uses the ACTUAL zip — no fabricated city.
+        address: `${streetNo} ${STREETS[n % STREETS.length]}, ${query.zip}`,
+        category: label,
+        hours: "Mon–Fri 8AM–6PM",
         reviewCount,
-        rating: reviewCount === 0 ? undefined : 3.8 + (i % 5) * 0.25,
-        claimed: i % 2 === 0,
-        photoCount: i * 3,
+        rating: reviewCount === 0 ? undefined : Math.round((3.6 + (n % 14) / 10) * 10) / 10,
+        claimed: n % 2 === 0,
+        photoCount: n % 40,
         priceLevel: undefined,
       } satisfies RawListing;
     }

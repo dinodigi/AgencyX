@@ -3,6 +3,7 @@ import { useLiveState } from "../App.tsx";
 import { QueuePanel } from "./QueuePanel.tsx";
 import { RunControls } from "./RunControls.tsx";
 import { RunLog } from "./RunLog.tsx";
+import { CapturedLeads } from "./CapturedLeads.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 
 export function Dashboard({ email, onSignOut }: { email: string; onSignOut: () => void }) {
@@ -29,7 +30,10 @@ export function Dashboard({ email, onSignOut }: { email: string; onSignOut: () =
           <RunControls />
           <QueuePanel queue={queue} />
         </div>
-        <RunLog lines={log} />
+        <div className="col">
+          <CapturedLeads />
+          <RunLog lines={log} />
+        </div>
       </main>
 
       <StatusBar sync={sync} device={device} />
