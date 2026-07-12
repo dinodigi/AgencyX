@@ -18,10 +18,14 @@ export interface Session {
   userToken: string;
 }
 
-const clerkEnabled = Boolean(process.env.CLERK_SECRET_KEY);
+// Read at call time (not module load) so an env change + hot reload can't leave
+// a stale value that disagrees with the middleware.
+function clerkEnabled(): boolean {
+  return Boolean(process.env.CLERK_SECRET_KEY);
+}
 
 export function isClerkEnabled(): boolean {
-  return clerkEnabled;
+  return clerkEnabled();
 }
 
 /**
@@ -32,17 +36,30 @@ export function isClerkEnabled(): boolean {
 export type AuthStatus = "signed-out" | "no-org" | "ready";
 
 export async function getAuthStatus(): Promise<AuthStatus> {
-  if (!clerkEnabled) return (await getDevSession()) ? "ready" : "signed-out";
-  const { auth } = await import("@clerk/nextjs/server");
-  const { userId, orgId } = await auth();
-  if (!userId) return "signed-out";
-  if (!orgId) return "no-org";
-  return "ready";
+  if (!clerkEnabled()) return (await getDevSession()) ? "ready" : "signed-out";
+  try {
+    const { auth } = await import("@clerk/nextjs/server");
+    const { userId, orgId } = await auth();
+    if (!userId) return "signed-out";
+    if (!orgId) return "no-org";
+    return "ready";
+  } catch (err) {
+    // Most common: clerkMiddleware() isn't active for this request yet — e.g. the
+    // env changed without a full server restart. Degrade to signed-out instead of
+    // 500-ing the page; a restart makes auth() work.
+    console.error("getAuthStatus: Clerk auth() failed (restart the dev server after env changes):", err);
+    return "signed-out";
+  }
 }
 
 export async function getSession(): Promise<Session | null> {
-  if (clerkEnabled) return getClerkSession();
-  return getDevSession();
+  if (!clerkEnabled()) return getDevSession();
+  try {
+    return await getClerkSession();
+  } catch (err) {
+    console.error("getSession: Clerk auth() failed (restart the dev server after env changes):", err);
+    return null;
+  }
 }
 
 async function getClerkSession(): Promise<Session | null> {
