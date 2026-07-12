@@ -11,7 +11,7 @@ The blueprint is [`render.yaml`](render.yaml) (a `lead-engine-web` Node web serv
 **One-time setup (you):**
 1. Render dashboard → **New → Blueprint** → connect this repo (`dinodigi/AgencyX`). Render reads `render.yaml`.
 2. Set the three secret env vars (marked `sync: false`, so they're prompted in the dashboard, never in git):
-   - `AGENTX_DELIVERY_TOKEN`
+   - `AGENTX_DELIVERY_TOKEN` — the **delivery** token, not the MCP token ([agentx/TOKENS.md](agentx/TOKENS.md))
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    - `CLERK_SECRET_KEY`
 3. Apply. Render builds (`pnpm install` + `pnpm --filter @dinosales/web build`) and starts (`next start`), health-checking `/api/health`.
