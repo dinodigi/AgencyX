@@ -1,0 +1,770 @@
+{
+  "version": 1,
+  "project": {
+    "name": "AgencyX",
+    "branding": {
+      "icon": "code",
+      "displayName": "AgencyX",
+      "primaryColor": "#00a87e"
+    }
+  },
+  "collections": [
+    {
+      "name": "agencies",
+      "displayName": "Agencies",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "label": "Name",
+          "required": true,
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "tier",
+          "type": "enum",
+          "label": "Tier",
+          "options": [
+            "starter",
+            "pro",
+            "enterprise"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "billing_email",
+          "type": "text",
+          "label": "Billing Email",
+          "publicRead": true
+        },
+        {
+          "name": "qualification_key_ref",
+          "type": "text",
+          "label": "Qualification Key Ref"
+        }
+      ]
+    },
+    {
+      "name": "devices",
+      "displayName": "Devices",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "device_id",
+          "type": "text",
+          "label": "Device ID",
+          "unique": true,
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "user",
+          "type": "relation",
+          "label": "User",
+          "labelField": "email",
+          "publicRead": true,
+          "targetCollection": "users"
+        },
+        {
+          "name": "agency",
+          "type": "relation",
+          "label": "Agency",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "agencies"
+        },
+        {
+          "name": "platform",
+          "type": "enum",
+          "label": "Platform",
+          "options": [
+            "windows",
+            "mac"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "app_version",
+          "type": "text",
+          "label": "App Version",
+          "publicRead": true
+        },
+        {
+          "name": "last_seen",
+          "type": "date",
+          "label": "Last Seen",
+          "publicRead": true
+        }
+      ]
+    },
+    {
+      "name": "leads",
+      "displayName": "Leads",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": {
+        "field": "stage",
+        "initial": "scraped",
+        "transitions": [
+          {
+            "to": "qualified",
+            "from": "scraped",
+            "actors": [
+              "mcp"
+            ]
+          },
+          {
+            "to": "building",
+            "from": "qualified",
+            "actors": [
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "proposed",
+            "from": "building",
+            "actors": [
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "sold",
+            "from": "proposed",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "client",
+            "from": "sold",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          }
+        ]
+      },
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "dedup_key",
+          "type": "text",
+          "label": "Dedup Key",
+          "unique": true,
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "place_id",
+          "type": "text",
+          "label": "Place ID",
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "business_name",
+          "type": "text",
+          "label": "Business Name",
+          "required": true,
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "label": "Phone",
+          "publicRead": true
+        },
+        {
+          "name": "website",
+          "type": "text",
+          "label": "Website",
+          "publicRead": true
+        },
+        {
+          "name": "has_website",
+          "type": "boolean",
+          "label": "Has Website",
+          "publicRead": true
+        },
+        {
+          "name": "address",
+          "type": "text",
+          "label": "Address",
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "hours",
+          "type": "text",
+          "label": "Hours",
+          "publicRead": true
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "label": "Category",
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "review_count",
+          "type": "number",
+          "label": "Review Count",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "max": 5,
+          "min": 0,
+          "name": "rating",
+          "type": "number",
+          "label": "Rating",
+          "publicRead": true
+        },
+        {
+          "name": "review_bucket",
+          "type": "enum",
+          "label": "Review Bucket",
+          "options": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "claimed",
+          "type": "boolean",
+          "label": "Claimed",
+          "publicRead": true
+        },
+        {
+          "name": "photo_count",
+          "type": "number",
+          "label": "Photo Count",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "price_level",
+          "type": "text",
+          "label": "Price Level",
+          "publicRead": true
+        },
+        {
+          "name": "stage",
+          "type": "enum",
+          "label": "Stage",
+          "options": [
+            "scraped",
+            "qualified",
+            "building",
+            "proposed",
+            "sold",
+            "client"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "listing_health_score",
+          "type": "number",
+          "label": "Listing Health Score",
+          "publicRead": true
+        },
+        {
+          "name": "qualification_score",
+          "type": "number",
+          "label": "Qualification Score",
+          "publicRead": true
+        },
+        {
+          "name": "search_query",
+          "type": "relation",
+          "label": "Search Query",
+          "labelField": "keyword",
+          "publicRead": true,
+          "targetCollection": "search_queries"
+        },
+        {
+          "name": "agency",
+          "type": "relation",
+          "label": "Agency",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "agencies"
+        },
+        {
+          "name": "device",
+          "type": "relation",
+          "label": "Device",
+          "labelField": "device_id",
+          "publicRead": true,
+          "targetCollection": "devices"
+        }
+      ]
+    },
+    {
+      "name": "listing_audits",
+      "displayName": "Listing Audits",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "lead",
+          "type": "relation",
+          "label": "Lead",
+          "required": true,
+          "labelField": "business_name",
+          "publicRead": true,
+          "targetCollection": "leads"
+        },
+        {
+          "name": "agency",
+          "type": "relation",
+          "label": "Agency",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "agencies"
+        },
+        {
+          "name": "provider",
+          "type": "enum",
+          "label": "Provider",
+          "options": [
+            "moz",
+            "brightlocal",
+            "other"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "directories_checked",
+          "type": "number",
+          "label": "Directories Checked",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "directories_found",
+          "type": "number",
+          "label": "Directories Found",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "inconsistencies",
+          "type": "richtext",
+          "label": "Inconsistencies",
+          "publicRead": true
+        },
+        {
+          "name": "raw_result",
+          "type": "richtext",
+          "label": "Raw Result"
+        },
+        {
+          "name": "checked_at",
+          "type": "date",
+          "label": "Checked At",
+          "publicRead": true
+        }
+      ]
+    },
+    {
+      "name": "search_queries",
+      "displayName": "Search Queries",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": {
+        "field": "status",
+        "initial": "pending",
+        "transitions": [
+          {
+            "to": "running",
+            "from": "pending",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "completed",
+            "from": "running",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "failed",
+            "from": "running",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "pending",
+            "from": "failed",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "pending",
+            "from": "completed",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          }
+        ]
+      },
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "dedup_key",
+          "type": "text",
+          "label": "Dedup Key",
+          "unique": true,
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "keyword",
+          "type": "text",
+          "label": "Keyword",
+          "required": true,
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "zip",
+          "type": "text",
+          "label": "ZIP",
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "status",
+          "type": "enum",
+          "label": "Status",
+          "options": [
+            "pending",
+            "running",
+            "completed",
+            "failed"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "last_scraped_at",
+          "type": "date",
+          "label": "Last Scraped At",
+          "publicRead": true
+        },
+        {
+          "name": "result_count",
+          "type": "number",
+          "label": "Result Count",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "user",
+          "type": "relation",
+          "label": "User",
+          "labelField": "email",
+          "publicRead": true,
+          "targetCollection": "users"
+        },
+        {
+          "name": "agency",
+          "type": "relation",
+          "label": "Agency",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "agencies"
+        },
+        {
+          "name": "device",
+          "type": "relation",
+          "label": "Device",
+          "labelField": "device_id",
+          "publicRead": true,
+          "targetCollection": "devices"
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "displayName": "Users",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "label": "Email",
+          "unique": true,
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "label": "Name",
+          "publicRead": true
+        },
+        {
+          "name": "role",
+          "type": "enum",
+          "label": "Role",
+          "options": [
+            "admin",
+            "scraper",
+            "viewer"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "agency",
+          "type": "relation",
+          "label": "Agency",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "agencies"
+        }
+      ]
+    }
+  ]
+}

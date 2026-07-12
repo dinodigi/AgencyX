@@ -1,0 +1,6 @@
+{
+  "name": "@dinosales/qualification",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase-3 scoring service (async path): entry.created webhook receiver (skip restored:true), BYO-key vault, MCP update_entry_if write-back, scraped→qualified transition driver."
+}

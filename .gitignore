@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+release/
+.next/
+.turbo/
+*.log
+.env
+.env.*
+!.env.example
+*.local.json
+.DS_Store

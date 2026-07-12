@@ -1,0 +1,6 @@
+{
+  "name": "@dinosales/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Next.js management UI — scaffold lands in W3 (roadmap Phase 1). Consumes @dinosales/agentx-client + @dinosales/ui."
+}

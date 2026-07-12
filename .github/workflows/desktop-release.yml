@@ -1,0 +1,31 @@
+# Desktop build/sign/release pipeline — SKELETON (roadmap W1 step 1).
+# Activates when apps/desktop has its Electron scaffold. Per brief §12.4 this
+# ships and is proven with a dummy app BEFORE any scraping logic lands.
+name: Desktop Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm via corepack
+        run: corepack enable
+
+      - name: Install
+        run: pnpm install --no-frozen-lockfile
+
+      # TODO (W1): electron-builder NSIS build scoped to apps/desktop.
+      # Requires the Authenticode cert (roadmap Phase 0.4 — order early):
+      #   CSC_LINK / CSC_KEY_PASSWORD secrets for signing,
+      #   GH_TOKEN for publishing to GitHub Releases (electron-updater feed).
+      - name: Build + sign + publish (pending W1 scaffold)
+        run: echo "apps/desktop scaffold not present yet — see roadmap.md W1"

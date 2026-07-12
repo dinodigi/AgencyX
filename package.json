@@ -1,0 +1,20 @@
+{
+  "name": "dinosales",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "turbo typecheck",
+    "build": "turbo build",
+    "lint:manifest": "node agentx/lint.mjs"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0"
+  },
+  "pnpm": {
+    "comment": "Native modules are rebuilt by electron-builder for Electron's ABI at package time; skip their local gyp compile so installs work without a C++ toolchain.",
+    "neverBuiltDependencies": ["better-sqlite3", "keytar"]
+  }
+}

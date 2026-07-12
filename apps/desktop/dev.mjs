@@ -1,0 +1,29 @@
+/**
+ * Dev orchestrator: start the Vite renderer dev server, bundle main+preload,
+ * then launch Electron pointed at the dev server (main reads VITE_DEV_SERVER_URL).
+ * Requires the native modules to be rebuilt for Electron once (see README).
+ */
+import { spawn } from "node:child_process";
+import { createServer } from "vite";
+import { build } from "esbuild";
+
+const NATIVE = ["better-sqlite3", "keytar", "electron", "electron-updater"];
+const common = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, external: NATIVE };
+
+const server = await createServer({ configFile: "vite.config.ts" });
+await server.listen();
+const url = server.resolvedUrls?.local?.[0];
+if (!url) throw new Error("vite dev server did not report a URL");
+
+await build({ ...common, entryPoints: ["src/main/index.ts"], outfile: "dist/main/index.js" });
+await build({ ...common, entryPoints: ["src/preload/index.ts"], outfile: "dist/preload/index.js" });
+
+const electronBin = (await import("electron")).default;
+const child = spawn(electronBin, ["."], {
+  stdio: "inherit",
+  env: { ...process.env, VITE_DEV_SERVER_URL: url },
+});
+child.on("close", async () => {
+  await server.close();
+  process.exit(0);
+});

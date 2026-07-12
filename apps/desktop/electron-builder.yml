@@ -1,0 +1,27 @@
+# Windows-first packaging (brief §7.2/§7.3). Produces a signed NSIS installer
+# published to GitHub Releases; electron-updater reads that feed for self-update.
+# Code signing (§7.3): set CSC_LINK + CSC_KEY_PASSWORD in CI (Authenticode cert,
+# OV or EV — roadmap open decision #2). Mac target adds later as a build matrix.
+appId: com.dinosales.leadengine
+productName: Lead Engine
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+# Native modules are unpacked so they load at runtime.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/keytar/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+publish:
+  provider: github
+  # owner/repo inferred from git remote at release time.
