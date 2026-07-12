@@ -126,7 +126,10 @@ export class GoogleMapsSource implements ScrapeSource {
         if (opts.signal.aborted) return;
         const card = cards.nth(i);
         const href = (await card.getAttribute("href")) ?? "";
-        const placeId = placeIdFromUrl(href) ?? placeIdFromUrl(page.url());
+        // The card's aria-label IS the business name — the reliable source (the
+        // detail h1 can be the "Results" heading). Also the dedup fallback.
+        const cardName = (await card.getAttribute("aria-label"))?.trim() || undefined;
+        const placeId = placeIdFromUrl(href) ?? (cardName ? `name:${cardName.toLowerCase().replace(/\s+/g, "-")}` : null);
         if (!placeId || seen.has(placeId)) continue;
         seen.add(placeId);
 
@@ -136,11 +139,11 @@ export class GoogleMapsSource implements ScrapeSource {
           await card.click({ timeout: 8000 });
           await actionDelay(opts.signal);
           await this.assertNotBlocked(page);
-          const listing = await this.extractDetail(page, placeId);
+          const listing = await this.extractDetail(page, placeId, cardName);
           if (listing) {
             yield listing;
           } else {
-            opts.onLog("warn", `listing ${i + 1}: detail panel didn't load a name (skipped)`);
+            opts.onLog("warn", `listing ${i + 1}: no business name found (skipped)`);
           }
         } catch (err) {
           if (err instanceof ScrapeBlockedError) throw err;
@@ -163,7 +166,7 @@ export class GoogleMapsSource implements ScrapeSource {
     }
   }
 
-  private async extractDetail(page: PwPage, placeId: string): Promise<RawListing | null> {
+  private async extractDetail(page: PwPage, placeId: string, cardName?: string): Promise<RawListing | null> {
     const d = MAPS.detail;
     const text = async (sel: string): Promise<string | undefined> => {
       const loc = page.locator(sel).first();
@@ -176,22 +179,26 @@ export class GoogleMapsSource implements ScrapeSource {
       return (await loc.getAttribute(name)) ?? undefined;
     };
 
-    const businessName = await text(d.name);
-    if (!businessName) return null; // detail didn't load — skip rather than store junk
+    // Prefer the name from the card; fall back to the detail h1.
+    const businessName = cardName ?? (await text(d.name));
+    if (!businessName) return null; // no name anywhere — skip rather than store junk
 
-    const ratingLabel = (await attr(d.ratingBlock, "aria-label")) ?? "";
-    const { rating, reviewCount } = parseRatingLabel(ratingLabel);
+    // Rating/reviews: aria-label ("4.7 stars 123 reviews") or the block text ("4.7(123)").
+    const { rating, reviewCount } = parseRatingLabel((await attr(d.ratingBlock, "aria-label")) ?? (await text(d.ratingBlock)));
     const website = await attr(d.website, "href");
     const claimVisible = (await page.locator(d.claimLink).count()) > 0;
+    const phoneLabel = await attr(d.phone, "aria-label");
+    const phoneId = await attr(d.phone, "data-item-id");
+    const hours = (await attr(d.hours, "aria-label")) ?? (await text(d.hours));
 
     return {
       placeId,
       businessName,
-      phone: (await attr(d.phone, "aria-label"))?.replace(/^Phone:\s*/i, "") ?? undefined,
+      phone: phoneLabel?.replace(/^Phone:\s*/i, "") ?? phoneId?.replace(/^phone:tel:/i, "") ?? undefined,
       website: website ?? undefined,
       address: (await attr(d.address, "aria-label"))?.replace(/^Address:\s*/i, "") ?? undefined,
       category: await text(d.category),
-      hours: await text(d.hours),
+      hours: hours || undefined,
       reviewCount,
       rating,
       claimed: !claimVisible, // "Claim this business" present ⇒ unclaimed

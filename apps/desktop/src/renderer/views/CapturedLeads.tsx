@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CapturedLead } from "../../shared/ipc.ts";
 
 /**
@@ -9,13 +9,15 @@ import type { CapturedLead } from "../../shared/ipc.ts";
 export function CapturedLeads() {
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [running, setRunning] = useState(false);
+  const prevRunning = useRef(false);
 
   useEffect(() => {
     const offs = [
       window.leadEngine.on.leadCaptured((l) => setLeads((prev) => [l, ...prev].slice(0, 500))),
       window.leadEngine.on.runChanged((r) => {
         setRunning(r.running);
-        if (r.running && r.captured === 0) setLeads([]); // fresh run → clear
+        if (r.running && !prevRunning.current) setLeads([]); // leading edge of a new run → clear
+        prevRunning.current = r.running;
       }),
     ];
     return () => offs.forEach((off) => off());
