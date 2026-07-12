@@ -8,11 +8,11 @@
 
 import type { LeadEngineClient, LeadsCreate } from "@dinosales/agentx-client";
 import { isUniqueConflict } from "@dinosales/agentx-client";
-import type { Outbox } from "./outbox.ts";
+import type { OutboxStore } from "./outbox.ts";
 import type { SyncStats } from "../shared/ipc.ts";
 
 export interface SyncEngineDeps {
-  outbox: Outbox;
+  outbox: OutboxStore;
   getClient: () => LeadEngineClient | null;
   onStats: (stats: SyncStats) => void;
   onLog: (level: "info" | "warn" | "error", message: string) => void;

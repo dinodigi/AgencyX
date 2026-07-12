@@ -4,8 +4,19 @@
  * Requires the native modules to be rebuilt for Electron once (see README).
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer } from "vite";
 import { build } from "esbuild";
+
+// Load apps/desktop/.env (AGENTX_DELIVERY_TOKEN, etc.) into process.env if present.
+if (existsSync(".env")) {
+  try {
+    process.loadEnvFile(".env");
+    console.log("[dev] loaded .env");
+  } catch (err) {
+    console.warn("[dev] could not load .env:", err?.message ?? err);
+  }
+}
 
 const NATIVE = ["better-sqlite3", "keytar", "electron", "electron-updater"];
 const common = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, external: NATIVE };

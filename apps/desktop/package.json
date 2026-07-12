@@ -6,6 +6,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json",
+    "doctor": "node doctor.mjs",
     "test": "node --import tsx --test test/*.test.ts",
     "build:node": "node build.mjs",
     "build:renderer": "vite build",

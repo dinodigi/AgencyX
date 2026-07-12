@@ -1,15 +1,21 @@
 /**
- * Local SQLite outbox (brief §7.1) — the offline safety-net. Scraped leads
- * write here FIRST, tagged with the device id, then a worker drains them to
- * AgentX. AgentX stays the source of truth; this is a durable buffer that
- * survives crashes and offline stretches.
+ * Local outbox (brief §7.1) — the offline safety-net. Scraped leads write here
+ * FIRST, tagged with the device id, then a worker drains them to AgentX. AgentX
+ * stays the source of truth; this is a durable buffer that survives crashes and
+ * offline stretches.
  *
- * Uniqueness is enforced locally too (dedup_key UNIQUE) so a device never even
- * queues the same business twice within a run; cross-device/tenant dedup is
- * AgentX's unique dedup_key (see @dinosales/agentx-client syncLead).
+ * Two implementations behind one interface:
+ *  - SqliteOutbox — durable, WAL-mode better-sqlite3 (the real one).
+ *  - MemoryOutbox — in-process fallback so the app LAUNCHES and is testable on a
+ *    machine without the C++ toolchain to build better-sqlite3. Non-durable:
+ *    leads are lost on quit before they sync, so it warns loudly.
+ * createOutbox() picks Sqlite and falls back to Memory.
+ *
+ * Local uniqueness on dedup_key means a device never queues the same business
+ * twice in a run; cross-device/tenant dedup is AgentX's unique dedup_key.
  */
 
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 import type { OutboxLead } from "../shared/ipc.ts";
 
 export interface NewLead {
@@ -20,10 +26,25 @@ export interface NewLead {
   payloadJson: string;
 }
 
-export class Outbox {
-  private db: Database.Database;
+export interface OutboxStore {
+  enqueue(lead: NewLead, now: number): "queued" | "duplicate";
+  nextPending(limit: number): OutboxLead[];
+  markSynced(localId: number, remoteId: string): void;
+  markFailed(localId: number, error: string): void;
+  requeueFailed(): number;
+  stats(): { pending: number; synced: number; failed: number };
+  close(): void;
+  readonly durable: boolean;
+}
+
+export class SqliteOutbox implements OutboxStore {
+  readonly durable = true;
+  private db: BetterSqlite3.Database;
 
   constructor(path: string) {
+    // Lazy require so a missing/unbuilt native module fails HERE (caught by the
+    // factory) instead of at import time, which would crash the whole app.
+    const Database = require("better-sqlite3") as typeof BetterSqlite3;
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.db.exec(`
@@ -43,7 +64,6 @@ export class Outbox {
     `);
   }
 
-  /** Enqueue a scraped lead. Idempotent locally: a repeat dedup_key is ignored. */
   enqueue(lead: NewLead, now: number): "queued" | "duplicate" {
     const res = this.db
       .prepare(
@@ -75,13 +95,10 @@ export class Outbox {
 
   markFailed(localId: number, error: string): void {
     this.db
-      .prepare(
-        `UPDATE outbox_leads SET sync_state = 'failed', attempts = attempts + 1, last_error = ? WHERE local_id = ?`,
-      )
+      .prepare(`UPDATE outbox_leads SET sync_state = 'failed', attempts = attempts + 1, last_error = ? WHERE local_id = ?`)
       .run(error, localId);
   }
 
-  /** Reset transient failures back to pending (e.g. after reconnect). */
   requeueFailed(): number {
     return this.db.prepare(`UPDATE outbox_leads SET sync_state = 'pending' WHERE sync_state = 'failed'`).run().changes;
   }
@@ -101,5 +118,87 @@ export class Outbox {
 
   close(): void {
     this.db.close();
+  }
+}
+
+interface MemRow extends OutboxLead {}
+
+/** In-memory fallback — same behavior, no persistence. */
+export class MemoryOutbox implements OutboxStore {
+  readonly durable = false;
+  private rows: MemRow[] = [];
+  private seq = 0;
+  private keys = new Set<string>();
+
+  enqueue(lead: NewLead, now: number): "queued" | "duplicate" {
+    if (this.keys.has(lead.dedupKey)) return "duplicate";
+    this.keys.add(lead.dedupKey);
+    this.rows.push({
+      localId: ++this.seq,
+      dedupKey: lead.dedupKey,
+      placeId: lead.placeId,
+      businessName: lead.businessName,
+      payloadJson: lead.payloadJson,
+      syncState: "pending",
+      attempts: 0,
+      createdAt: now,
+    });
+    return "queued";
+  }
+
+  nextPending(limit: number): OutboxLead[] {
+    return this.rows
+      .filter((r) => r.syncState !== "synced")
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(0, limit)
+      .map((r) => ({ ...r }));
+  }
+
+  markSynced(localId: number, remoteId: string): void {
+    const r = this.rows.find((x) => x.localId === localId);
+    if (r) {
+      r.syncState = "synced";
+      r.remoteId = remoteId;
+      r.lastError = undefined;
+    }
+  }
+
+  markFailed(localId: number, error: string): void {
+    const r = this.rows.find((x) => x.localId === localId);
+    if (r) {
+      r.syncState = "failed";
+      r.attempts += 1;
+      r.lastError = error;
+    }
+  }
+
+  requeueFailed(): number {
+    let n = 0;
+    for (const r of this.rows) if (r.syncState === "failed") (r.syncState = "pending"), n++;
+    return n;
+  }
+
+  stats(): { pending: number; synced: number; failed: number } {
+    const s = { pending: 0, synced: 0, failed: 0 };
+    for (const r of this.rows) s[r.syncState] += 1;
+    return s;
+  }
+
+  close(): void {
+    /* nothing to close */
+  }
+}
+
+/** Build the durable outbox; fall back to in-memory (with a warning) if the
+ *  native better-sqlite3 module isn't available (e.g. no C++ toolchain). */
+export function createOutbox(path: string, onWarn: (msg: string) => void): OutboxStore {
+  try {
+    return new SqliteOutbox(path);
+  } catch (err) {
+    onWarn(
+      `SQLite unavailable (${err instanceof Error ? err.message : String(err)}) — using a NON-durable in-memory outbox. ` +
+        `Un-synced leads will be lost on quit. Rebuild native modules for persistence (see apps/desktop/README).`,
+    );
+    return new MemoryOutbox();
   }
 }

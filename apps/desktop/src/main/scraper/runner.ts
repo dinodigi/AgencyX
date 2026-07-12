@@ -11,7 +11,7 @@ import type { RawListing } from "@dinosales/types";
 import { makeLeadDedupKey, reviewBucket, deriveHasWebsite } from "@dinosales/types";
 import type { ScrapeSource, ScrapeOutcome } from "./types.ts";
 import { ScraperEngine } from "./engine.ts";
-import type { Outbox } from "../outbox.ts";
+import type { OutboxStore } from "../outbox.ts";
 
 export interface RunContext {
   orgId: string;
@@ -22,7 +22,7 @@ export interface RunContext {
 
 export interface ScrapeRunnerDeps {
   /** Only `enqueue` is used — typed narrowly so the pipeline is testable without SQLite. */
-  outbox: Pick<Outbox, "enqueue">;
+  outbox: Pick<OutboxStore, "enqueue">;
   makeSource: () => ScrapeSource;
   /** Claim the query for this device; false result = another device won it. */
   claim: (queryId: string, deviceRowId: string) => Promise<{ claimed: boolean; reason?: string }>;

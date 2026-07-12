@@ -12,7 +12,7 @@ import type { AuthState, QueueItem, RunLogLine, RunState, SyncStats } from "../s
 import { initSecureStore } from "./secure-store.ts";
 import { AuthManager, type RefreshFn } from "./auth.ts";
 import { getOrCreateDeviceId } from "./device.ts";
-import { Outbox } from "./outbox.ts";
+import { createOutbox, type OutboxStore } from "./outbox.ts";
 import { SyncEngine } from "./sync-engine.ts";
 import { initUpdater } from "./updater.ts";
 import { ScrapeRunner, type RunContext } from "./scraper/runner.ts";
@@ -29,7 +29,7 @@ const IS_DEV = !app.isPackaged;
 
 let win: BrowserWindow | null = null;
 let auth: AuthManager;
-let outbox: Outbox;
+let outbox: OutboxStore;
 let sync: SyncEngine;
 let deviceId = "";
 let runAbort: AbortController | null = null;
@@ -302,10 +302,11 @@ async function listQueue(): Promise<QueueItem[]> {
 
 app.whenReady().then(async () => {
   const userData = app.getPath("userData");
-  initSecureStore(join(userData, "auth-meta.json"));
+  initSecureStore(join(userData, "auth-meta.json"), (msg) => log("warn", msg));
   deviceId = getOrCreateDeviceId(join(userData, "device-id"));
 
-  outbox = new Outbox(join(userData, "outbox.sqlite3"));
+  outbox = createOutbox(join(userData, "outbox.sqlite3"), (msg) => log("warn", msg));
+  if (!outbox.durable) log("warn", "outbox is in-memory (dev mode) — leads not persisted across restarts");
 
   auth = new AuthManager(DELIVERY_TOKEN, refreshFn, (state: AuthState) => void onAuthChanged(state), log);
 

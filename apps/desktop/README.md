@@ -19,8 +19,25 @@ Windows-first Electron app. This is the W1 shell: login, secure token storage, l
 - `pnpm typecheck` — main + renderer tsconfigs. **Verified green.**
 - `pnpm dist` — electron-builder → signed NSIS installer (`release/`).
 
-## Native modules
-`better-sqlite3` and `keytar` are native. Local installs skip their gyp compile (root `pnpm.neverBuiltDependencies`) since this repo may lack a C++ toolchain; **electron-builder rebuilds them for Electron's ABI at package time.** To run `pnpm dev` locally you need them built once for your Electron: install the VS C++ Build Tools, then `pnpm rebuild better-sqlite3 keytar` (or `electron-rebuild`).
+## Run it (test as you build)
+```
+pnpm --filter @dinosales/desktop doctor   # what mode you'll get + what's missing
+pnpm --filter @dinosales/desktop dev       # launches the Electron window
+```
+`dev` starts Vite (renderer), bundles main+preload (esbuild), and opens Electron. It loads `apps/desktop/.env` (see `.env.example`) for `AGENTX_DELIVERY_TOKEN`.
+
+**It launches with NO C++ toolchain.** The two native modules degrade gracefully:
+- `better-sqlite3` missing → in-memory outbox (non-durable; leads lost on quit — fine for UI testing).
+- `keytar` missing → tokens in a `0600` file (not OS-secure; dev only).
+
+So you can immediately: sign in (dev form — paste any email/org/JWT), run a **mock scrape** (dry-run on by default), watch the live log, and see leads queue. With `AGENTX_DELIVERY_TOKEN` + a real Clerk JWT, sign-in also registers the device and sync/queue-claim reach AgentX.
+
+### Full (native) mode — durable + OS-secure
+Install **Visual Studio Build Tools** with the "Desktop development with C++" workload, then:
+```
+pnpm --filter @dinosales/desktop rebuild better-sqlite3 keytar
+```
+electron-builder rebuilds these for Electron's ABI automatically at package time (`pnpm dist`), so shipped installers are always full-mode.
 
 ## Scraper (W2 — `src/main/scraper`)
 Source-agnostic engine driving a `ScrapeSource`:
