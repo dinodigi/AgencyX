@@ -57,3 +57,28 @@ export async function createBatch(_prev: BatchResult, formData: FormData): Promi
   revalidatePath("/coverage");
   return { ok: true, created, existing, total };
 }
+
+export interface StageResult {
+  ok: boolean;
+  error?: string;
+  stage?: string;
+}
+
+/** Move a lead to the next pipeline stage. AgentX's workflow enforces that only
+ *  a declared transition is allowed (invalid moves are rejected). */
+export async function advanceStage(_prev: StageResult, formData: FormData): Promise<StageResult> {
+  const ctx = await withClient();
+  if (!ctx) return { ok: false, error: "Not signed in." };
+  const leadId = String(formData.get("leadId") ?? "");
+  const toStage = String(formData.get("toStage") ?? "");
+  if (!leadId || !toStage) return { ok: false, error: "Missing lead or stage." };
+
+  try {
+    await ctx.client.update("leads", leadId, { stage: toStage });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/leads");
+  return { ok: true, stage: toStage };
+}

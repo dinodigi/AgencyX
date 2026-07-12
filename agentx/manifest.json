@@ -209,13 +209,16 @@
             "to": "qualified",
             "from": "scraped",
             "actors": [
-              "mcp"
+              "delivery",
+              "mcp",
+              "admin"
             ]
           },
           {
             "to": "building",
             "from": "qualified",
             "actors": [
+              "delivery",
               "mcp",
               "admin"
             ]
@@ -224,6 +227,7 @@
             "to": "proposed",
             "from": "building",
             "actors": [
+              "delivery",
               "mcp",
               "admin"
             ]

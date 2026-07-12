@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import type { LeadsListOpts } from "@dinosales/agentx-client";
 import { withClient, isConfigured } from "@/lib/agentx.ts";
 import { getAuthStatus } from "@/lib/auth.ts";
@@ -76,7 +77,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                   {rows.map((l) => (
                     <tr key={l.id} className="border-b border-[var(--color-border)] last:border-0">
                       <Td>
-                        <div className="font-medium">{l.business_name}</div>
+                        <Link href={`/leads/${l.id}`} className="font-medium hover:text-[var(--color-stage-qualified)] hover:underline">
+                          {l.business_name}
+                        </Link>
                         <div className="text-xs text-[var(--color-muted)]">{l.phone ?? l.address ?? ""}</div>
                       </Td>
                       <Td className="text-[var(--color-muted)]">{l.category ?? "—"}</Td>
