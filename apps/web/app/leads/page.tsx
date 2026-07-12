@@ -1,7 +1,9 @@
 import { Suspense } from "react";
 import type { LeadsListOpts } from "@dinosales/agentx-client";
 import { withClient, isConfigured } from "@/lib/agentx.ts";
-import { PageHeader, Card, EmptyState, SignedOut, NotConfigured, StageBadge } from "@/components/ui.tsx";
+import { getAuthStatus } from "@/lib/auth.ts";
+import { PageHeader, Card, EmptyState, NotConfigured, StageBadge } from "@/components/ui.tsx";
+import { AuthGate } from "@/components/AuthGate.tsx";
 import { LeadFilters } from "@/components/LeadFilters.tsx";
 
 export const dynamic = "force-dynamic";
@@ -23,8 +25,10 @@ function buildFilter(sp: SP): LeadsListOpts["filter"] {
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
   if (!isConfigured()) return <NotConfigured />;
+  const status = await getAuthStatus();
+  if (status !== "ready") return <AuthGate status={status} />;
   const ctx = await withClient();
-  if (!ctx) return <SignedOut />;
+  if (!ctx) return <AuthGate status="signed-out" />;
 
   const sp = await searchParams;
   const filter = buildFilter(sp);

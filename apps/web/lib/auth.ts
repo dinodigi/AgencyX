@@ -24,6 +24,22 @@ export function isClerkEnabled(): boolean {
   return clerkEnabled;
 }
 
+/**
+ * Richer than getSession so the UI can distinguish "signed out" from "signed in
+ * but no active organization" — an authed user with no org must be shown an org
+ * picker, NOT a "not signed in" screen.
+ */
+export type AuthStatus = "signed-out" | "no-org" | "ready";
+
+export async function getAuthStatus(): Promise<AuthStatus> {
+  if (!clerkEnabled) return (await getDevSession()) ? "ready" : "signed-out";
+  const { auth } = await import("@clerk/nextjs/server");
+  const { userId, orgId } = await auth();
+  if (!userId) return "signed-out";
+  if (!orgId) return "no-org";
+  return "ready";
+}
+
 export async function getSession(): Promise<Session | null> {
   if (clerkEnabled) return getClerkSession();
   return getDevSession();

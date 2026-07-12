@@ -1,13 +1,17 @@
 import { withClient, isConfigured } from "@/lib/agentx.ts";
-import { PageHeader, Card, EmptyState, SignedOut, NotConfigured } from "@/components/ui.tsx";
+import { getAuthStatus } from "@/lib/auth.ts";
+import { PageHeader, Card, EmptyState, NotConfigured } from "@/components/ui.tsx";
+import { AuthGate } from "@/components/AuthGate.tsx";
 import { fmtRelative } from "@/lib/format.ts";
 
 export const dynamic = "force-dynamic";
 
 export default async function DevicesPage() {
   if (!isConfigured()) return <NotConfigured />;
+  const status = await getAuthStatus();
+  if (status !== "ready") return <AuthGate status={status} />;
   const ctx = await withClient();
-  if (!ctx) return <SignedOut />;
+  if (!ctx) return <AuthGate status="signed-out" />;
 
   let rows: Awaited<ReturnType<typeof ctx.ax.devices.list>> = [];
   let error: string | null = null;

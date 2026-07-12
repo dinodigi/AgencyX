@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SignedIn, SignedOut, SignInButton, UserButton, OrganizationSwitcher } from "@clerk/nextjs";
+import {
+  ClerkLoading,
+  ClerkLoaded,
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+  OrganizationSwitcher,
+} from "@clerk/nextjs";
 
 const LINKS = [
   { href: "/leads", label: "Leads" },
@@ -40,26 +48,32 @@ export function Nav() {
       <div className="mt-auto flex flex-col gap-3 pt-4">
         {clerkOn ? (
           <>
-            <SignedIn>
-              <OrganizationSwitcher
-                hidePersonal
-                appearance={{ elements: { rootBox: "w-full", organizationSwitcherTrigger: "w-full justify-between" } }}
-              />
-              <div className="flex items-center gap-2 px-1">
-                <UserButton />
-                <span className="text-xs text-[var(--color-muted)]">Account</span>
-              </div>
-            </SignedIn>
-            <SignedOut>
-              <SignInButton mode="modal">
-                <button className="rounded-lg bg-[var(--color-brand)] px-3 py-2 text-sm font-medium text-[var(--color-brand-fg)]">
-                  Sign in
-                </button>
-              </SignInButton>
-            </SignedOut>
+            {/* Always render a visible state so the auth area never blanks. */}
+            <ClerkLoading>
+              <span className="px-3 py-2 text-xs text-[var(--color-muted)]">Loading…</span>
+            </ClerkLoading>
+            <ClerkLoaded>
+              <SignedIn>
+                <OrganizationSwitcher
+                  hidePersonal
+                  appearance={{ elements: { rootBox: "w-full", organizationSwitcherTrigger: "w-full justify-between" } }}
+                />
+                <div className="flex items-center gap-2 px-1">
+                  <UserButton />
+                  <span className="text-xs text-[var(--color-muted)]">Account</span>
+                </div>
+              </SignedIn>
+              <SignedOut>
+                <SignInButton mode="modal">
+                  <button className="w-full rounded-lg bg-[var(--color-brand)] px-3 py-2 text-sm font-medium text-[var(--color-brand-fg)]">
+                    Sign in
+                  </button>
+                </SignInButton>
+              </SignedOut>
+            </ClerkLoaded>
           </>
         ) : (
-          <div className="px-3 py-2 text-xs text-[var(--color-muted)]">Internal · tenant #1</div>
+          <div className="px-3 py-2 text-xs text-[var(--color-muted)]">Internal · tenant #1 · Clerk off</div>
         )}
       </div>
     </nav>

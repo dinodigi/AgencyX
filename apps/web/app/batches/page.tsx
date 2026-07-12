@@ -1,13 +1,15 @@
 import { isConfigured } from "@/lib/agentx.ts";
-import { getSession } from "@/lib/auth.ts";
-import { PageHeader, Card, SignedOut, NotConfigured } from "@/components/ui.tsx";
+import { getAuthStatus } from "@/lib/auth.ts";
+import { PageHeader, Card, NotConfigured } from "@/components/ui.tsx";
+import { AuthGate } from "@/components/AuthGate.tsx";
 import { BatchBuilder } from "@/components/BatchBuilder.tsx";
 
 export const dynamic = "force-dynamic";
 
 export default async function BatchesPage() {
   if (!isConfigured()) return <NotConfigured />;
-  if (!(await getSession())) return <SignedOut />;
+  const status = await getAuthStatus();
+  if (status !== "ready") return <AuthGate status={status} />;
 
   return (
     <div>
