@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { withClient, isConfigured } from "@/lib/agentx.ts";
 import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, Card, EmptyState, NotConfigured, StatusBadge } from "@/components/ui.tsx";
@@ -56,7 +57,11 @@ export default async function CoveragePage() {
                         <StatusBadge status={q.status} />
                       </td>
                       <td className="px-4 py-3 text-[var(--color-muted)]">{fmtRelative(q.last_scraped_at)}</td>
-                      <td className="px-4 py-3">{q.result_count ?? 0}</td>
+                      <td className="px-4 py-3">
+                        <Link href={`/leads?search_query=${q.id}`} className="text-[var(--color-stage-qualified)] hover:underline">
+                          {q.result_count ?? 0} →
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

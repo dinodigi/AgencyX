@@ -186,8 +186,10 @@ export function createLeadEngineClient(options: AgentXClientOptions) {
       dedup_key: string;
       keyword: string;
       zip: string;
+      max_leads?: number;
       user?: string;
       agency?: string;
+      device?: string;
     }): Promise<SyncResult> {
       try {
         const { id } = await ax.search_queries.create(row);

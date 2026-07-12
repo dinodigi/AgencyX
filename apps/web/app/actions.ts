@@ -30,6 +30,7 @@ export async function createBatch(_prev: BatchResult, formData: FormData): Promi
 
   const keywords = [...new Set(lines(formData.get("keywords")).map(normalizeKeyword))];
   const zips = [...new Set(lines(formData.get("zips")).map(normalizeZip))].filter((z) => z.length >= 3);
+  const maxLeads = Math.max(1, Math.min(200, Number(formData.get("maxLeads")) || 50));
 
   if (keywords.length === 0 || zips.length === 0) {
     return { ok: false, error: "Enter at least one keyword and one ZIP." };
@@ -45,7 +46,7 @@ export async function createBatch(_prev: BatchResult, formData: FormData): Promi
     for (const keyword of keywords) {
       for (const zip of zips) {
         const dedup_key = makeQueryDedupKey(ctx.session.orgId, keyword, zip);
-        const res = await ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip });
+        const res = await ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, max_leads: maxLeads });
         if (res.alreadySynced) existing++;
         else created++;
       }

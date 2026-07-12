@@ -14,7 +14,7 @@ import type { RawListing } from "@dinosales/types";
 import type { ScrapeQuery, ScrapeSource, ScrapeSourceOptions } from "./types.ts";
 import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
 import { actionDelay, betweenListingsDelay, randomUserAgent, randomViewport, sleep, randInt } from "./human.ts";
-import { MAPS, parseRatingLabel, placeIdFromUrl } from "./selectors.ts";
+import { MAPS, placeIdFromUrl } from "./selectors.ts";
 
 // Minimal Playwright surface we depend on — declared locally so this file
 // typechecks without the package installed. The runtime objects are the real
@@ -183,8 +183,20 @@ export class GoogleMapsSource implements ScrapeSource {
     const businessName = cardName ?? (await text(d.name));
     if (!businessName) return null; // no name anywhere — skip rather than store junk
 
-    // Rating/reviews: aria-label ("4.7 stars 123 reviews") or the block text ("4.7(123)").
-    const { rating, reviewCount } = parseRatingLabel((await attr(d.ratingBlock, "aria-label")) ?? (await text(d.ratingBlock)));
+    // Rating: the visible number span, else the "N stars" aria-label. Reject
+    // anything outside 0–5 (so a stray number never lands as a rating).
+    let rating: number | undefined;
+    const ratingText = (await text(d.ratingValue)) ?? (await attr(d.starsLabel, "aria-label"));
+    const rMatch = ratingText?.match(/([\d.]+)/);
+    if (rMatch) {
+      const parsed = Number(rMatch[1]);
+      if (parsed >= 0 && parsed <= 5) rating = parsed;
+    }
+    // Reviews: a span/button whose aria-label reads "N reviews" (or its text).
+    let reviewCount: number | undefined;
+    const reviewsText = (await attr(d.reviewsCount, "aria-label")) ?? (await text(d.reviewsCount));
+    const revMatch = reviewsText?.replace(/,/g, "").match(/(\d+)/);
+    if (revMatch) reviewCount = Number(revMatch[1]);
     const website = await attr(d.website, "href");
     const claimVisible = (await page.locator(d.claimLink).count()) > 0;
     const phoneLabel = await attr(d.phone, "aria-label");

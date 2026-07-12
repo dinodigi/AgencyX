@@ -669,6 +669,15 @@
           "publicRead": true
         },
         {
+          "max": 200,
+          "min": 1,
+          "name": "max_leads",
+          "type": "number",
+          "label": "Max Leads",
+          "integer": true,
+          "publicRead": true
+        },
+        {
           "name": "user",
           "type": "relation",
           "label": "User",

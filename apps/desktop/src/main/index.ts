@@ -248,7 +248,7 @@ async function claimNextRun(): Promise<RunState> {
     return runState;
   }
 
-  let pending: { id: string; keyword: string; zip: string } | undefined;
+  let pending: { id: string; keyword: string; zip: string; max_leads?: number } | undefined;
   try {
     const rows = await client.ax.search_queries.list({
       filter: { status: "pending" },
@@ -268,7 +268,7 @@ async function claimNextRun(): Promise<RunState> {
   runAbort = new AbortController();
   setRunState({ running: true, keyword: pending.keyword, zip: pending.zip, captured: 0, lastOutcome: undefined });
 
-  void makeRunner(false)
+  void makeRunner(false, pending.max_leads)
     .runQuery(pending.id, pending.keyword, pending.zip, currentContext(state.orgId), runAbort.signal)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });

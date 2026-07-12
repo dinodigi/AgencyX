@@ -43,8 +43,11 @@ export const MAPS = {
     address: 'button[data-item-id="address"], button[aria-label^="Address:" i]',
     // Category sits in a button just under the name.
     category: 'button[jsaction*="category"], button.DkEaL',
-    // Rating + review count live in .F7nice (aria-label like "4.7 stars 123 reviews").
-    ratingBlock: 'div.F7nice, span[role="img"][aria-label*="stars" i]',
+    // Rating + review count. The rating is the visible number span; the review
+    // count is a span/button whose aria-label reads "N reviews".
+    ratingValue: 'div.F7nice span[aria-hidden="true"]',
+    starsLabel: 'span[role="img"][aria-label*="star" i]',
+    reviewsCount: 'div.F7nice button[aria-label*="review" i], div.F7nice span[aria-label*="review" i], button[aria-label*="reviews" i]',
     // Hours: the open-hours block; full week is behind an aria-label on the toggle.
     hours: '[jsaction*="openhours"] [aria-label], div.t39EBf[aria-label], [aria-label*="Hours" i]',
     // "Claim this business" only shows on UNCLAIMED listings — its presence = unclaimed.

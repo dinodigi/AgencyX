@@ -21,6 +21,7 @@ function buildFilter(sp: SP): LeadsListOpts["filter"] {
   if (sp.has_website === "false") filter.has_website = false;
   if (sp.claimed === "true") filter.claimed = true;
   if (sp.claimed === "false") filter.claimed = false;
+  if (sp.search_query) filter.search_query = sp.search_query as string;
   return filter;
 }
 

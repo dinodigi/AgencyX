@@ -237,6 +237,7 @@ export interface SearchQueries {
   status?: "pending" | "running" | "completed" | "failed";
   last_scraped_at?: string;
   result_count?: number;
+  max_leads?: number;
   user?: { id: string; label: string };
   agency?: { id: string; label: string };
   device?: { id: string; label: string };
@@ -250,11 +251,12 @@ export interface SearchQueriesListOpts {
     status?: "pending" | "running" | "completed" | "failed";
     last_scraped_at?: string;
     result_count?: number;
+    max_leads?: number;
     user?: string;
     agency?: string;
     device?: string;
   };
-  sort?: { field: "dedup_key" | "keyword" | "zip" | "status" | "last_scraped_at" | "result_count" | "user" | "agency" | "device"; dir: "asc" | "desc" };
+  sort?: { field: "dedup_key" | "keyword" | "zip" | "status" | "last_scraped_at" | "result_count" | "max_leads" | "user" | "agency" | "device"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -267,6 +269,7 @@ export interface SearchQueriesCreate {
   status?: "pending" | "running" | "completed" | "failed";
   last_scraped_at?: string;
   result_count?: number;
+  max_leads?: number;
   user?: string;
   agency?: string;
   device?: string;

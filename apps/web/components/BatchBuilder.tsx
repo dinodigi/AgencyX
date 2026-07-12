@@ -26,19 +26,33 @@ export function BatchBuilder() {
         </label>
       </div>
 
+      <label className="flex items-center gap-3 text-sm">
+        <span className="font-medium">Leads per search</span>
+        <input
+          name="maxLeads"
+          type="number"
+          min={1}
+          max={200}
+          defaultValue={50}
+          className="w-24 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-ink)]"
+        />
+        <span className="text-xs text-[var(--color-muted)]">the desktop scraper stops at this many per search (keep it small)</span>
+      </label>
+
       <div className="flex items-center gap-3">
         <button
           type="submit"
           disabled={pending}
           className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-medium text-[var(--color-brand-fg)] disabled:opacity-50"
         >
-          {pending ? "Creating…" : "Create batch"}
+          {pending ? "Creating…" : "Queue searches"}
         </button>
 
         {state.error && <span className="text-sm text-red-400">{state.error}</span>}
         {state.ok && (
           <span className="text-sm text-[var(--color-stage-sold)]">
-            {state.created} new · {state.existing} already covered · {state.total} total units
+            Queued: {state.created} new · {state.existing} already covered · {state.total} total. Open the desktop app → “Run
+            next queued”.
           </span>
         )}
       </div>
