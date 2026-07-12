@@ -19,6 +19,7 @@ import { ScrapeRunner, type RunContext } from "./scraper/runner.ts";
 import { MockSource } from "./scraper/mock-source.ts";
 import { GoogleMapsSource } from "./scraper/google-source.ts";
 import type { ScrapeSource } from "./scraper/types.ts";
+import { ensureRegistration, type Registration } from "./registration.ts";
 
 // The delivery-scoped project token is baked at build time (public read/write
 // is still gated by the user JWT, so this is a project identifier, not a secret
@@ -33,6 +34,14 @@ let sync: SyncEngine;
 let deviceId = "";
 let runAbort: AbortController | null = null;
 let runState: RunState = { running: false, captured: 0 };
+let registration: Registration | null = null;
+let heartbeatTimer: NodeJS.Timeout | null = null;
+
+const HEARTBEAT_MS = 5 * 60 * 1000; // coarse — presence, not real-time (limits undocumented)
+
+function platformName(): "windows" | "mac" {
+  return process.platform === "darwin" ? "mac" : "windows";
+}
 
 function send<T>(channel: string, payload: T): void {
   win?.webContents.send(channel, payload);
@@ -106,7 +115,73 @@ function registerIpc(): void {
 
   ipcMain.handle("run:getState", () => runState);
   ipcMain.handle("run:start", (_e, args: { keyword: string; zip: string; mock?: boolean }) => startRun(args));
+  ipcMain.handle("run:claimNext", () => claimNextRun());
   ipcMain.handle("run:stop", () => stopRun());
+}
+
+/**
+ * Registration + presence. On sign-in, ensure the org's agency/user/device rows
+ * exist and remember their ids so leads carry relations and the queue-claim path
+ * can run; on sign-out, drop them and stop the heartbeat.
+ */
+async function onAuthChanged(state: AuthState): Promise<void> {
+  send("auth:changed", state);
+  if (state.status === "signed-in" && state.orgId && state.email) {
+    if (!registration) await doRegister(state.orgId, state.email);
+  } else {
+    registration = null;
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+async function doRegister(orgId: string, email: string): Promise<void> {
+  const client = auth.getClient();
+  if (!client) return;
+  try {
+    registration = await ensureRegistration(client, {
+      orgId,
+      deviceId,
+      platform: platformName(),
+      appVersion: app.getVersion(),
+      email,
+    });
+    log("info", `device registered (${deviceId.slice(0, 8)}…) to agency ${registration.agencyRowId.slice(0, 8)}…`);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(() => void beat(), HEARTBEAT_MS);
+  } catch (err) {
+    log("error", `device registration failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function beat(): Promise<void> {
+  const client = auth.getClient();
+  if (!client || !registration) return;
+  try {
+    await client.heartbeat(registration.deviceRowId, app.getVersion(), new Date().toISOString());
+  } catch (err) {
+    log("warn", `heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Build a runner whose claim/complete/fail drive the real search_queries workflow. */
+function makeRunner(useRealSource: boolean): ScrapeRunner {
+  const client = auth.getClient()!;
+  return new ScrapeRunner({
+    outbox,
+    makeSource: (): ScrapeSource => (useRealSource ? new GoogleMapsSource() : new MockSource({ count: 8 })),
+    claim: (queryId, deviceRowId) => client.claimQuery(queryId, deviceRowId),
+    complete: (queryId, count, iso) => client.completeQuery(queryId, count, iso),
+    fail: (queryId) => client.failQuery(queryId),
+    onLog: log,
+    onOutcome: (o) => setRunState({ lastOutcome: o.kind }),
+    now: () => new Date().toISOString(),
+    maxLeads: 80,
+  });
+}
+
+function currentContext(orgId: string): RunContext {
+  return { orgId, agencyRowId: registration?.agencyRowId, deviceRowId: registration?.deviceRowId };
 }
 
 function setRunState(patch: Partial<RunState>): void {
@@ -128,27 +203,65 @@ async function startRun(args: { keyword: string; zip: string; mock?: boolean }):
   runAbort = new AbortController();
   setRunState({ running: true, keyword: args.keyword, zip: args.zip, captured: 0, lastOutcome: undefined });
 
-  const ctx: RunContext = { orgId: state.orgId };
-  const runner = new ScrapeRunner({
-    outbox,
-    // Real Google source once selectors are tuned (§12.5); mock is the default/dry-run.
-    makeSource: (): ScrapeSource => (args.mock === false ? new GoogleMapsSource() : new MockSource({ count: 8 })),
-    claim: async () => ({ claimed: true }),
-    complete: async () => {},
-    fail: async () => {},
-    onLog: log,
-    onOutcome: (o) => setRunState({ lastOutcome: o.kind }),
-    now: () => new Date().toISOString(),
-    maxLeads: 80,
-  });
-
-  // Track captured count off the log stream is brittle; wrap onListing via the
-  // runner's ad-hoc path and let sync drain. Fire-and-forget; UI follows events.
-  void runner
+  // Ad-hoc run: no queue row to claim; leads carry agency/device if registered.
+  const ctx = currentContext(state.orgId);
+  void makeRunner(args.mock === false)
     .runAdhoc(args.keyword, args.zip, ctx, runAbort.signal)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
       void sync.flushNow();
+    })
+    .catch((err) => {
+      log("error", `run crashed: ${err instanceof Error ? err.message : String(err)}`);
+      setRunState({ running: false });
+    });
+
+  return runState;
+}
+
+/** Claim the oldest pending search query for this org and run it end-to-end. */
+async function claimNextRun(): Promise<RunState> {
+  const state = auth.getState();
+  const client = auth.getClient();
+  if (state.status !== "signed-in" || !state.orgId || !client) {
+    log("error", "cannot run: not signed in");
+    return runState;
+  }
+  if (runState.running) {
+    log("warn", "a run is already in progress");
+    return runState;
+  }
+  if (!registration?.deviceRowId) {
+    log("error", "device not registered yet — cannot claim a queued query");
+    return runState;
+  }
+
+  let pending: { id: string; keyword: string; zip: string } | undefined;
+  try {
+    const rows = await client.ax.search_queries.list({
+      filter: { status: "pending" },
+      limit: 1,
+      sort: { field: "keyword", dir: "asc" },
+    });
+    pending = rows[0];
+  } catch (err) {
+    log("error", `queue read failed: ${err instanceof Error ? err.message : String(err)}`);
+    return runState;
+  }
+  if (!pending) {
+    log("info", "no pending queries to claim");
+    return runState;
+  }
+
+  runAbort = new AbortController();
+  setRunState({ running: true, keyword: pending.keyword, zip: pending.zip, captured: 0, lastOutcome: undefined });
+
+  void makeRunner(false)
+    .runQuery(pending.id, pending.keyword, pending.zip, currentContext(state.orgId), runAbort.signal)
+    .then((outcome) => {
+      setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
+      void sync.flushNow();
+      void listQueue();
     })
     .catch((err) => {
       log("error", `run crashed: ${err instanceof Error ? err.message : String(err)}`);
@@ -194,12 +307,7 @@ app.whenReady().then(async () => {
 
   outbox = new Outbox(join(userData, "outbox.sqlite3"));
 
-  auth = new AuthManager(
-    DELIVERY_TOKEN,
-    refreshFn,
-    (state: AuthState) => send("auth:changed", state),
-    log,
-  );
+  auth = new AuthManager(DELIVERY_TOKEN, refreshFn, (state: AuthState) => void onAuthChanged(state), log);
 
   sync = new SyncEngine({
     outbox,
@@ -227,6 +335,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   sync?.stop();
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
   outbox?.close();
   if (process.platform !== "darwin") app.quit();
 });

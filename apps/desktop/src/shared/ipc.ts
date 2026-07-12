@@ -78,6 +78,7 @@ export interface IpcApi {
   "device:getInfo": () => { deviceId: string; platform: string; appVersion: string };
 
   "run:start": (args: { keyword: string; zip: string; mock?: boolean }) => RunState;
+  "run:claimNext": () => RunState;
   "run:stop": () => RunState;
   "run:getState": () => RunState;
 

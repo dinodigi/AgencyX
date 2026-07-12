@@ -6,6 +6,7 @@ Windows-first Electron app. This is the W1 shell: login, secure token storage, l
 - **main** (`src/main`) — Node side. Owns the network, SQLite, tokens, and the AgentX client. `index.ts` wires it together.
   - `secure-store.ts` — tokens in Windows Credential Manager (keytar); non-secret metadata in a `0600` userData file.
   - `auth.ts` — AgentX client + Clerk JWT **refresh loop** (JWTs are ~60s, runs are hours; AgentX only verifies, refresh is ours).
+  - `registration.ts` — on sign-in, idempotently ensures the org's **Agencies** row + the user's **Users** row + this install's **Devices** row via the delivery API (race-safe via each collection's unique key); a 5-min heartbeat refreshes `last_seen`. Its ids populate the run context so leads carry agency/device relations.
   - `outbox.ts` — SQLite buffer; leads write locally first (`dedup_key` UNIQUE), drained by the sync engine.
   - `sync-engine.ts` — drains the outbox via `syncLead()`; retry-safe with **no delivery idempotency** (unique-conflict → already-synced, the S1 spike contract).
   - `updater.ts` — electron-updater reading the GitHub Releases feed.

@@ -44,6 +44,7 @@
           "name": "org_id",
           "type": "text",
           "label": "Org ID",
+          "unique": true,
           "required": true
         },
         {

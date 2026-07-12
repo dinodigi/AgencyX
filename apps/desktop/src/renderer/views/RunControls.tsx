@@ -40,9 +40,14 @@ export function RunControls() {
               Stop
             </button>
           ) : (
-            <button className="primary" disabled={!keyword || !zip} onClick={() => void window.leadEngine.run.start({ keyword, zip, mock })}>
-              Start run
-            </button>
+            <>
+              <button className="primary" disabled={!keyword || !zip} onClick={() => void window.leadEngine.run.start({ keyword, zip, mock })}>
+                Start run
+              </button>
+              <button className="ghost" title="Claim the oldest pending query from the web queue" onClick={() => void window.leadEngine.run.claimNext()}>
+                Run next queued
+              </button>
+            </>
           )}
           {run.captured > 0 && <span className="muted tiny">captured {run.captured}</span>}
         </div>

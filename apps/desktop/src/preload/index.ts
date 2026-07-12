@@ -27,6 +27,7 @@ const api = {
   },
   run: {
     start: (args: { keyword: string; zip: string; mock?: boolean }): Promise<RunState> => ipcRenderer.invoke("run:start", args),
+    claimNext: (): Promise<RunState> => ipcRenderer.invoke("run:claimNext"),
     stop: (): Promise<RunState> => ipcRenderer.invoke("run:stop"),
     getState: (): Promise<RunState> => ipcRenderer.invoke("run:getState"),
   },
