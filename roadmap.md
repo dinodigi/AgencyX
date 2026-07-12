@@ -69,7 +69,8 @@ Built + verified (server-rendered, org-scoped via the shared client behind a ser
 - Batch builder: keywords × ZIPs cross-product → SearchQueries via a server action, chunked with `upsertSearchQuery` dedup semantics + a 500-unit safety cap ✅
 - Coverage view (SearchQueries by `last_scraped_at`, the §5.4 soft-dedup surface) ✅
 - Devices view ✅ · nav shell + Tailwind v4 tokens mirroring packages/ui ✅
-**TODO:** org onboarding (bootstrap ordering) · lead-level ZIP filter (needs relation-hop in the client wrapper) · live run log via changes SSE · real Clerk auth (currently a server-side dev stub reading env/cookie; `lib/auth.ts` is the single swap point) · settings.
+**Clerk auth WIRED** (progressive): `@clerk/nextjs` — ClerkProvider, middleware, sign-in UI + OrganizationSwitcher in the nav, `getSession()` uses `auth()`/`getToken()` when `CLERK_SECRET_KEY` is set, else the dev stub. Both build paths green. `/api/whoami` decodes the live token and reports whether flat `org_id`/`org_role` claims are present (the AgentX-scoping gate). Connector fixed 2026-07-12 (publishable key corrected).
+**TODO (needs your side):** add Clerk keys to `apps/web/.env.local`, enable Organizations, create a test org+user, and set the session-token claims (`org_id`/`org_role`) — then `/api/whoami` confirms good-to-go. Remaining build: org onboarding (bootstrap ordering) · lead-level ZIP filter (relation-hop) · live run log via changes SSE · settings.
 
 **Exit criteria (the brief's definition of done):** a real user logs in on a fresh Windows install from the public installer, runs a batch, watches the live log in the web app, and clean deduped leads land — across two test orgs with zero cross-tenant visibility. Self-update proven by shipping a v1.0.1.
 
