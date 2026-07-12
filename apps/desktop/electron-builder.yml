@@ -4,6 +4,11 @@
 # OV or EV — roadmap open decision #2). Mac target adds later as a build matrix.
 appId: com.dinosales.leadengine
 productName: Lead Engine
+# Rebuild native deps (better-sqlite3, keytar) for Electron's ABI at package time.
+npmRebuild: true
+# pnpm symlinks node_modules; let electron-builder follow them when collecting deps.
+buildDependenciesFromSource: false
+nodeGypRebuild: false
 directories:
   output: release
   buildResources: build
@@ -24,4 +29,5 @@ nsis:
   allowToChangeInstallationDirectory: true
 publish:
   provider: github
-  # owner/repo inferred from git remote at release time.
+  owner: dinodigi
+  repo: AgencyX

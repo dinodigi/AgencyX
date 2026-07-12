@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "description": "Electron scraper client — Clerk login + refresh, SQLite outbox, sync engine, self-update.",
+  "author": "DinoSales <partners@dinodigi.com>",
+  "repository": { "type": "git", "url": "https://github.com/dinodigi/AgencyX.git" },
   "main": "dist/main/index.js",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json",

@@ -1,0 +1,27 @@
+# Render Blueprint — apply via Render dashboard → New → Blueprint (points at this repo).
+# Deploys the Next.js web app. Secrets (sync:false) are set in the Render dashboard,
+# never committed. The desktop app does NOT deploy here — it ships via GitHub Releases.
+services:
+  - type: web
+    name: lead-engine-web
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    autoDeploy: true
+    # pnpm workspace build. Native desktop deps (better-sqlite3/keytar) are skipped
+    # by root package.json's pnpm.neverBuiltDependencies, so this install needs no
+    # C++ toolchain. NEXT_PUBLIC_* must exist at build time (Render injects env for
+    # both build and runtime).
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dinosales/web build
+    startCommand: pnpm --filter @dinosales/web start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: AGENTX_DELIVERY_TOKEN
+        sync: false
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false

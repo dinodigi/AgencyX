@@ -1,11 +1,16 @@
-# Desktop build/sign/release pipeline — SKELETON (roadmap W1 step 1).
-# Activates when apps/desktop has its Electron scaffold. Per brief §12.4 this
-# ships and is proven with a dummy app BEFORE any scraping logic lands.
+# Desktop build/sign/release (brief §7.2/§7.3). Triggered by a version tag
+# (e.g. `git tag v0.1.0 && git push origin v0.1.0`). Builds the Windows NSIS
+# installer with electron-builder and publishes it to GitHub Releases;
+# electron-updater reads that feed for self-update.
 name: Desktop Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch: {} # allow a manual run without a tag (produces artifacts, no publish)
+
+permissions:
+  contents: write # create the GitHub Release + upload assets
 
 jobs:
   windows:
@@ -15,17 +20,29 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
 
-      - name: Enable pnpm via corepack
+      - name: Enable pnpm
         run: corepack enable
 
       - name: Install
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      # TODO (W1): electron-builder NSIS build scoped to apps/desktop.
-      # Requires the Authenticode cert (roadmap Phase 0.4 — order early):
-      #   CSC_LINK / CSC_KEY_PASSWORD secrets for signing,
-      #   GH_TOKEN for publishing to GitHub Releases (electron-updater feed).
-      - name: Build + sign + publish (pending W1 scaffold)
-        run: echo "apps/desktop scaffold not present yet — see roadmap.md W1"
+      # electron-builder rebuilds native deps (better-sqlite3, keytar) for
+      # Electron's ABI during packaging; windows-latest has the C++ toolchain.
+      # If the rebuild is imperfect the app still runs (in-memory/file fallbacks).
+      - name: Build + publish installer
+        run: pnpm --filter @dinosales/desktop ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'dist' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing (§7.3) — OPTIONAL. Set these repo secrets to sign the
+          # installer (kills the SmartScreen warning); without them it's unsigned.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Upload installer artifact (also available on manual runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: lead-engine-windows
+          path: apps/desktop/release/*.exe
+          if-no-files-found: warn
