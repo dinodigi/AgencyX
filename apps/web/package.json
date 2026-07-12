@@ -2,5 +2,27 @@
   "name": "@dinosales/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Next.js management UI — scaffold lands in W3 (roadmap Phase 1). Consumes @dinosales/agentx-client + @dinosales/ui."
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dinosales/agentx-client": "workspace:*",
+    "@dinosales/types": "workspace:*",
+    "@dinosales/ui": "workspace:*",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
 }

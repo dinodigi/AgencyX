@@ -63,8 +63,13 @@ Three parallel workstreams. Per §12.4: the desktop **release pipeline ships bef
 5. **MockSource + 4 pipeline tests green** (scrape→outbox→status, dedup, CAPTCHA cool-down, lost-claim) — full loop proven without Google. Run controls wired into the desktop UI (dry-run default).
 6. **TODO: coverage soft-gate** (read SearchQueries by keyword+zip before a run); tune against real ZIPs; selector maintenance is now a standing cost line.
 
-### W3 — Web app (Next.js App Router + Tailwind v4)
-Screens (§8): org onboarding (bootstrap ordering flow) · batch builder (keywords × ZIPs → chunked sequential delivery POSTs with progress + dedupKey upsert semantics) · lead table (filters on precomputed `hasWebsite`/`reviewBucket`/`claimed`/ZIP via one-hop relation; offset paging is fine at MVP) · coverage view (query SearchQueries by lastScrapedAt) · device status · live run log via changes SSE (reconnect with `?since`/Last-Event-ID) · settings.
+### W3 — Web app (Next.js App Router + Tailwind v4) — CORE SCREENS BUILT ✅ (next build green, rendered)
+Built + verified (server-rendered, org-scoped via the shared client behind a server-only boundary):
+- Lead table with filters on precomputed `has_website`/`review_bucket`/`claimed`/`stage` (equality — the working delivery filters) ✅
+- Batch builder: keywords × ZIPs cross-product → SearchQueries via a server action, chunked with `upsertSearchQuery` dedup semantics + a 500-unit safety cap ✅
+- Coverage view (SearchQueries by `last_scraped_at`, the §5.4 soft-dedup surface) ✅
+- Devices view ✅ · nav shell + Tailwind v4 tokens mirroring packages/ui ✅
+**TODO:** org onboarding (bootstrap ordering) · lead-level ZIP filter (needs relation-hop in the client wrapper) · live run log via changes SSE · real Clerk auth (currently a server-side dev stub reading env/cookie; `lib/auth.ts` is the single swap point) · settings.
 
 **Exit criteria (the brief's definition of done):** a real user logs in on a fresh Windows install from the public installer, runs a batch, watches the live log in the web app, and clean deduped leads land — across two test orgs with zero cross-tenant visibility. Self-update proven by shipping a v1.0.1.
 

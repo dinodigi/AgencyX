@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Design tokens — mirror packages/ui so web + desktop read as one product. */
+@theme {
+  --color-brand: #0f766e;
+  --color-brand-fg: #ffffff;
+  --color-bg: #0b1220;
+  --color-surface: #131c2e;
+  --color-surface-2: #1b2740;
+  --color-border: #26324c;
+  --color-ink: #e6ecf5;
+  --color-muted: #8595ad;
+
+  --color-stage-scraped: #64748b;
+  --color-stage-qualified: #0ea5e9;
+  --color-stage-building: #f59e0b;
+  --color-stage-proposed: #8b5cf6;
+  --color-stage-sold: #22c55e;
+  --color-stage-client: #0f766e;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-brand) 40%, transparent);
+}
