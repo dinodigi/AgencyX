@@ -86,20 +86,31 @@ export class GoogleMapsSource implements ScrapeSource {
 
   async *search(query: ScrapeQuery, opts: ScrapeSourceOptions): AsyncIterable<RawListing> {
     if (!this.ctx) throw new Error("source not open()ed");
+    const url = MAPS.searchUrl(query.keyword, query.zip);
+    opts.onLog("info", `Chrome launched — opening Google Maps: "${query.keyword}" in ${query.zip}`);
     const page = await this.ctx.newPage();
-    await page.goto(MAPS.searchUrl(query.keyword, query.zip), { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await actionDelay(opts.signal);
+    opts.onLog("info", `page loaded (${page.url().slice(0, 70)}…)`);
+
+    // Google frequently shows a consent/cookie wall first — a common reason a
+    // real run captures nothing. Detect + explain rather than fail silently.
+    if (/consent\.google|\/consent/i.test(page.url())) {
+      opts.onLog("warn", "Google is showing a consent page — scraping is blocked until it's dismissed (selector-tuning item)");
+    }
     await this.assertNotBlocked(page);
 
     // Empty search vs broken selector are distinct, logged states (§5.2).
     if ((await page.locator(MAPS.noResults).count()) > 0) {
-      opts.onLog("info", `no results for "${query.keyword}" in ${query.zip}`);
+      opts.onLog("info", `Google returned no results for "${query.keyword}" in ${query.zip}`);
       return;
     }
     const feed = page.locator(MAPS.resultsFeed);
     if ((await feed.count()) === 0) {
+      opts.onLog("error", "results feed not found — Google's layout changed vs our selectors (needs tuning; see selectors.ts)");
       throw new SelectorMissError("resultsFeed", "results feed not found — DOM may have changed");
     }
+    opts.onLog("info", "results feed found — reading listings");
 
     const seen = new Set<string>();
     let scrolls = 0;
@@ -109,6 +120,7 @@ export class GoogleMapsSource implements ScrapeSource {
       if (opts.signal.aborted) return;
       const cards = page.locator(MAPS.resultCard);
       const n = await cards.count();
+      opts.onLog("info", `scroll pass ${scrolls + 1}: ${n} cards on screen, ${seen.size} captured so far`);
 
       for (let i = 0; i < n && seen.size < opts.maxLeads; i++) {
         if (opts.signal.aborted) return;
@@ -125,10 +137,14 @@ export class GoogleMapsSource implements ScrapeSource {
           await actionDelay(opts.signal);
           await this.assertNotBlocked(page);
           const listing = await this.extractDetail(page, placeId);
-          if (listing) yield listing;
+          if (listing) {
+            yield listing;
+          } else {
+            opts.onLog("warn", `listing ${i + 1}: detail panel didn't load a name (skipped)`);
+          }
         } catch (err) {
           if (err instanceof ScrapeBlockedError) throw err;
-          opts.onLog("warn", `listing ${i} skipped: ${err instanceof Error ? err.message : String(err)}`);
+          opts.onLog("warn", `listing ${i + 1} skipped: ${err instanceof Error ? err.message : String(err)}`);
         }
         await betweenListingsDelay(opts.signal);
       }
@@ -138,6 +154,7 @@ export class GoogleMapsSource implements ScrapeSource {
       await sleep(randInt(700, 1600), opts.signal);
       scrolls++;
     }
+    opts.onLog("info", `done — ${seen.size} listings captured`);
   }
 
   private async assertNotBlocked(page: PwPage): Promise<void> {

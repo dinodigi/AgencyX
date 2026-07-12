@@ -6,7 +6,18 @@
  */
 import { build } from "esbuild";
 
-const NATIVE = ["better-sqlite3", "keytar", "electron", "electron-updater"];
+const NATIVE = [
+  "better-sqlite3",
+  "keytar",
+  "electron",
+  "electron-updater",
+  // Playwright + stealth must load from node_modules at runtime (they have
+  // native drivers + __dirname-relative paths that don't survive bundling).
+  "playwright-extra",
+  "playwright-core",
+  "playwright",
+  "puppeteer-extra-plugin-stealth",
+];
 
 const common = {
   bundle: true,

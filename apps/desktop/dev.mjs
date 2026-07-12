@@ -18,7 +18,17 @@ if (existsSync(".env")) {
   }
 }
 
-const NATIVE = ["better-sqlite3", "keytar", "electron", "electron-updater"];
+const NATIVE = [
+  "better-sqlite3",
+  "keytar",
+  "electron",
+  "electron-updater",
+  // Playwright + stealth load from node_modules at runtime (not bundled).
+  "playwright-extra",
+  "playwright-core",
+  "playwright",
+  "puppeteer-extra-plugin-stealth",
+];
 const common = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, external: NATIVE };
 
 const server = await createServer({ configFile: "vite.config.ts" });
