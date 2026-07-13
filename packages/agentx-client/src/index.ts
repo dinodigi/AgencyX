@@ -28,7 +28,10 @@ export type CollectionName =
   | "devices"
   | "search_queries"
   | "leads"
-  | "listing_audits";
+  | "listing_audits"
+  | "services"
+  | "microservices"
+  | "packages";
 
 export interface SyncResult {
   id: string;

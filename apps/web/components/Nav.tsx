@@ -45,6 +45,18 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M8 21h8M12 17v4" />
     </svg>
   ),
+  profile: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
+      <path d="M9 9v.01M9 13v.01M9 17v.01" />
+    </svg>
+  ),
+  packages: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+      <path d="M12 12 4 7.5M12 12l8-4.5M12 12v9" />
+    </svg>
+  ),
 };
 
 const GROUPS: { label: string; links: { href: string; label: string; icon: keyof typeof ICONS }[] }[] = [
@@ -54,6 +66,13 @@ const GROUPS: { label: string; links: { href: string; label: string; icon: keyof
     links: [
       { href: "/search", label: "Search", icon: "search" },
       { href: "/coverage", label: "Coverage", icon: "coverage" },
+    ],
+  },
+  {
+    label: "Agency",
+    links: [
+      { href: "/settings/profile", label: "Profile", icon: "profile" },
+      { href: "/settings/packages", label: "Packages", icon: "packages" },
     ],
   },
   { label: "System", links: [{ href: "/devices", label: "Devices", icon: "devices" }] },

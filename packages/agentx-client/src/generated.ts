@@ -50,6 +50,15 @@ export interface Agencies {
   name: string;
   tier?: "starter" | "pro" | "enterprise";
   billing_email?: string;
+  logo_url?: string;
+  tagline?: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  brand_color?: string;
+  accent_color?: string;
+  proposal_footer?: string;
 }
 export interface AgenciesListOpts {
   /** Equality filters on public fields. */
@@ -57,8 +66,16 @@ export interface AgenciesListOpts {
     name?: string;
     tier?: "starter" | "pro" | "enterprise";
     billing_email?: string;
+    logo_url?: string;
+    tagline?: string;
+    website?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    brand_color?: string;
+    accent_color?: string;
   };
-  sort?: { field: "name" | "tier" | "billing_email"; dir: "asc" | "desc" };
+  sort?: { field: "name" | "tier" | "billing_email" | "logo_url" | "tagline" | "website" | "phone" | "email" | "address" | "brand_color" | "accent_color" | "proposal_footer"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -69,6 +86,15 @@ export interface AgenciesCreate {
   tier?: "starter" | "pro" | "enterprise";
   billing_email?: string;
   qualification_key_ref?: string;
+  logo_url?: string;
+  tagline?: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  brand_color?: string;
+  accent_color?: string;
+  proposal_footer?: string;
 }
 export type AgenciesUpdate = Partial<AgenciesCreate>;
 
@@ -231,6 +257,99 @@ export interface ListingAuditsCreate {
 }
 export type ListingAuditsUpdate = Partial<ListingAuditsCreate>;
 
+/** microservices — public view; only publicRead fields are ever returned. */
+export interface Microservices {
+  id: string;
+  name: string;
+  description?: string;
+  category?: "web" | "seo" | "ads" | "social" | "branding" | "content" | "other";
+  active?: boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+export interface MicroservicesListOpts {
+  /** Equality filters on public fields. */
+  filter?: {
+    name?: string;
+    description?: string;
+    category?: "web" | "seo" | "ads" | "social" | "branding" | "content" | "other";
+    active?: boolean;
+    sort_order?: number;
+    created_at?: string;
+  };
+  sort?: { field: "name" | "description" | "category" | "active" | "sort_order" | "created_at"; dir: "asc" | "desc" };
+  limit?: number;
+  offset?: number;
+}
+/** microservices — write shape (relations/assets by id; "created_by" is stamped server-side). */
+export interface MicroservicesCreate {
+  org_id: string;
+  name: string;
+  description?: string;
+  category?: "web" | "seo" | "ads" | "social" | "branding" | "content" | "other";
+  active?: boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+export type MicroservicesUpdate = Partial<MicroservicesCreate>;
+
+/** packages — public view; only publicRead fields are ever returned. */
+export interface Packages {
+  id: string;
+  service?: { id: string; label: string };
+  name: string;
+  summary?: string;
+  price?: number;
+  currency?: "usd" | "eur" | "gbp";
+  billing?: "one_time" | "monthly" | "quarterly" | "annual";
+  setup_fee?: number;
+  highlights?: string;
+  items?: string;
+  popular?: boolean;
+  active?: boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+export interface PackagesListOpts {
+  /** Equality filters on public fields. */
+  filter?: {
+    service?: string;
+    name?: string;
+    summary?: string;
+    price?: number;
+    currency?: "usd" | "eur" | "gbp";
+    billing?: "one_time" | "monthly" | "quarterly" | "annual";
+    setup_fee?: number;
+    highlights?: string;
+    items?: string;
+    popular?: boolean;
+    active?: boolean;
+    sort_order?: number;
+    created_at?: string;
+  };
+  sort?: { field: "service" | "name" | "summary" | "price" | "currency" | "billing" | "setup_fee" | "highlights" | "items" | "popular" | "active" | "sort_order" | "created_at"; dir: "asc" | "desc" };
+  limit?: number;
+  offset?: number;
+}
+/** packages — write shape (relations/assets by id; "created_by" is stamped server-side). */
+export interface PackagesCreate {
+  org_id: string;
+  service?: string;
+  name: string;
+  summary?: string;
+  price?: number;
+  currency?: "usd" | "eur" | "gbp";
+  billing?: "one_time" | "monthly" | "quarterly" | "annual";
+  setup_fee?: number;
+  highlights?: string;
+  items?: string;
+  popular?: boolean;
+  active?: boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+export type PackagesUpdate = Partial<PackagesCreate>;
+
 /** search_queries — public view; only publicRead fields are ever returned. */
 export interface SearchQueries {
   id: string;
@@ -299,6 +418,45 @@ export interface SearchQueriesCreate {
   device?: string;
 }
 export type SearchQueriesUpdate = Partial<SearchQueriesCreate>;
+
+/** services — public view; only publicRead fields are ever returned. */
+export interface Services {
+  id: string;
+  name: string;
+  description?: string;
+  category?: "web" | "seo" | "ads" | "social" | "branding" | "content" | "other";
+  icon?: string;
+  active?: boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+export interface ServicesListOpts {
+  /** Equality filters on public fields. */
+  filter?: {
+    name?: string;
+    description?: string;
+    category?: "web" | "seo" | "ads" | "social" | "branding" | "content" | "other";
+    icon?: string;
+    active?: boolean;
+    sort_order?: number;
+    created_at?: string;
+  };
+  sort?: { field: "name" | "description" | "category" | "icon" | "active" | "sort_order" | "created_at"; dir: "asc" | "desc" };
+  limit?: number;
+  offset?: number;
+}
+/** services — write shape (relations/assets by id; "created_by" is stamped server-side). */
+export interface ServicesCreate {
+  org_id: string;
+  name: string;
+  description?: string;
+  category?: "web" | "seo" | "ads" | "social" | "branding" | "content" | "other";
+  icon?: string;
+  active?: boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+export type ServicesUpdate = Partial<ServicesCreate>;
 
 /** users — public view; only publicRead fields are ever returned. */
 export interface Users {
@@ -498,6 +656,32 @@ export function createClient(options: AgentXClientOptions) {
         return request<{ id: string }>("POST", "/listing_audits", undefined, data);
       },
     },
+    microservices: { // requires setUserToken() for non-public access
+      async list(opts: MicroservicesListOpts = {}): Promise<Microservices[]> {
+        const query: Record<string, unknown> = { limit: opts.limit, offset: opts.offset, ...(opts.filter ?? {}) };
+        if (opts.sort) query.sort = opts.sort.field + ":" + opts.sort.dir;
+        return (await request<{ data: Microservices[] }>("GET", "/microservices", query)).data;
+      },
+      async get(id: string): Promise<Microservices> {
+        return (await request<{ data: Microservices }>("GET", "/microservices/" + encodeURIComponent(id))).data;
+      },
+      async create(data: MicroservicesCreate): Promise<{ id: string }> {
+        return request<{ id: string }>("POST", "/microservices", undefined, data);
+      },
+    },
+    packages: { // requires setUserToken() for non-public access
+      async list(opts: PackagesListOpts = {}): Promise<Packages[]> {
+        const query: Record<string, unknown> = { limit: opts.limit, offset: opts.offset, ...(opts.filter ?? {}) };
+        if (opts.sort) query.sort = opts.sort.field + ":" + opts.sort.dir;
+        return (await request<{ data: Packages[] }>("GET", "/packages", query)).data;
+      },
+      async get(id: string): Promise<Packages> {
+        return (await request<{ data: Packages }>("GET", "/packages/" + encodeURIComponent(id))).data;
+      },
+      async create(data: PackagesCreate): Promise<{ id: string }> {
+        return request<{ id: string }>("POST", "/packages", undefined, data);
+      },
+    },
     search_queries: { // requires setUserToken() for non-public access
       async list(opts: SearchQueriesListOpts = {}): Promise<SearchQueries[]> {
         const query: Record<string, unknown> = { limit: opts.limit, offset: opts.offset, ...(opts.filter ?? {}) };
@@ -509,6 +693,19 @@ export function createClient(options: AgentXClientOptions) {
       },
       async create(data: SearchQueriesCreate): Promise<{ id: string }> {
         return request<{ id: string }>("POST", "/search_queries", undefined, data);
+      },
+    },
+    services: { // requires setUserToken() for non-public access
+      async list(opts: ServicesListOpts = {}): Promise<Services[]> {
+        const query: Record<string, unknown> = { limit: opts.limit, offset: opts.offset, ...(opts.filter ?? {}) };
+        if (opts.sort) query.sort = opts.sort.field + ":" + opts.sort.dir;
+        return (await request<{ data: Services[] }>("GET", "/services", query)).data;
+      },
+      async get(id: string): Promise<Services> {
+        return (await request<{ data: Services }>("GET", "/services/" + encodeURIComponent(id))).data;
+      },
+      async create(data: ServicesCreate): Promise<{ id: string }> {
+        return request<{ id: string }>("POST", "/services", undefined, data);
       },
     },
     users: { // requires setUserToken() for non-public access
