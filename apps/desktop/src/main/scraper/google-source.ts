@@ -19,7 +19,7 @@
 import type { RawListing } from "@dinosales/types";
 import type { ScrapeQuery, ScrapeSource, ScrapeSourceOptions } from "./types.ts";
 import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
-import { actionDelay, betweenListingsDelay, randomUserAgent, randomViewport, sleep, randInt } from "./human.ts";
+import { actionDelay, betweenListingsDelay, scrollPause, randomUserAgent, randomViewport, sleep } from "./human.ts";
 import { MAPS, placeIdFromUrl } from "./selectors.ts";
 
 // Minimal Playwright surface we depend on (declared locally so this file
@@ -112,7 +112,7 @@ export class GoogleMapsSource implements ScrapeSource {
     const page = await this.ctx.newPage();
     opts.onLog("info", `Chrome launched — opening Google Maps: "${query.keyword}" in ${query.zip}`);
     await page.goto(MAPS.searchUrl(query.keyword, query.zip), { waitUntil: "domcontentloaded", timeout: 30000 });
-    await actionDelay(opts.signal);
+    await actionDelay(opts.signal, opts.profile);
     opts.onLog("info", `page loaded (${page.url().slice(0, 70)}…)`);
 
     if (/consent\.google|\/consent/i.test(page.url())) {
@@ -136,6 +136,18 @@ export class GoogleMapsSource implements ScrapeSource {
     const sample = targets[0]!;
     opts.onLog("info", `phase 1 — ${targets.length} businesses in the map view. sample: "${sample.name}" | rating "${sample.ratingLabel || sample.ratingText}" | info "${sample.infoText.slice(0, 60)}"`);
 
+    // Preview mode: return the feed cards without opening each listing. Fast and
+    // low-risk, but no phone/website/hours — used for a quick coverage sweep.
+    if (opts.detailLevel === "preview") {
+      opts.onLog("info", "preview mode — returning feed cards without opening listings");
+      for (const c of targets) {
+        if (opts.signal.aborted) return;
+        yield this.parseCard(c);
+      }
+      opts.onLog("info", `done — ${targets.length} businesses captured (preview)`);
+      return;
+    }
+
     // ── Phase 2: open each listing and read the real data ──────────────────
     // The listing — not the map card — is where the focus is. We read reviews,
     // rating, hours, contact and category HERE; the card is only a fallback.
@@ -148,7 +160,7 @@ export class GoogleMapsSource implements ScrapeSource {
       let detail: DetailRaw | null = null;
       try {
         await page.goto(c.href, { waitUntil: "domcontentloaded", timeout: 20000 });
-        await actionDelay(opts.signal);
+        await actionDelay(opts.signal, opts.profile);
         await this.assertNotBlocked(page);
         await this.waitForDetail(page, opts.signal); // let the place panel render before reading
         detail = await this.extractDetail(page);
@@ -181,7 +193,7 @@ export class GoogleMapsSource implements ScrapeSource {
         "info",
         `phase 2 — ${done}/${targets.length}: ${merged.businessName} · ${merged.category ?? "—"} · ${stars} (${merged.reviewCount ?? 0} rev) · ${merged.phone ?? "no phone"} · ${merged.website ? "site" : "no site"} · ${merged.hours ? "hours✓" : "no hours"}`,
       );
-      await betweenListingsDelay(opts.signal);
+      await betweenListingsDelay(opts.signal, opts.profile);
     }
     opts.onLog("info", `done — ${done} businesses captured`);
   }
@@ -206,7 +218,7 @@ export class GoogleMapsSource implements ScrapeSource {
       if (count >= opts.maxLeads) break;
       if (count === prev) break; // no new cards loaded — reached the end
       prev = count;
-      await sleep(randInt(900, 1700), opts.signal);
+      await scrollPause(opts.signal, opts.profile);
     }
 
     return page.evaluate(() => {

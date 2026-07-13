@@ -7,8 +7,8 @@
  */
 
 import type { LeadsCreate } from "@dinosales/agentx-client";
-import type { RawListing, ScrapeFilter } from "@dinosales/types";
-import { makeLeadDedupKey, reviewBucket, deriveHasWebsite, passesFilter, describeFilter } from "@dinosales/types";
+import type { RawListing, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
+import { makeLeadDedupKey, reviewBucket, deriveHasWebsite, passesFilter, describeFilter, SPEED_PROFILES, DEFAULT_SPEED, DEFAULT_DETAIL_LEVEL } from "@dinosales/types";
 import type { ScrapeSource, ScrapeOutcome } from "./types.ts";
 import { ScraperEngine } from "./engine.ts";
 import type { OutboxStore } from "../outbox.ts";
@@ -35,12 +35,23 @@ export interface ScrapeRunnerDeps {
   /** ISO timestamp provider (injected so it's testable/deterministic). */
   now: () => string;
   maxLeads?: number;
+  /** Human-pacing speed for this run (careful/balanced/fast). Default balanced. */
+  speed?: ScrapeSpeed;
+  /** Discovery-only ("preview") vs open-each-listing ("full"). Default full. */
+  detailLevel?: ScrapeDetailLevel;
 }
 
 export class ScrapeRunner {
   private engine = new ScraperEngine();
 
   constructor(private deps: ScrapeRunnerDeps) {}
+
+  private get profile() {
+    return SPEED_PROFILES[this.deps.speed ?? DEFAULT_SPEED];
+  }
+  private get detailLevel(): ScrapeDetailLevel {
+    return this.deps.detailLevel ?? DEFAULT_DETAIL_LEVEL;
+  }
 
   toLead(listing: RawListing, ctx: RunContext, queryId?: string): LeadsCreate {
     return {
@@ -90,7 +101,7 @@ export class ScrapeRunner {
    * lands; it does not touch query status.
    */
   async runAdhoc(keyword: string, zip: string, ctx: RunContext, signal: AbortSignal, filter?: ScrapeFilter): Promise<ScrapeOutcome> {
-    this.deps.onLog("info", `ad-hoc run: ${keyword}/${zip} — target: ${describeFilter(filter)}`);
+    this.deps.onLog("info", `ad-hoc run: ${keyword}/${zip} — target: ${describeFilter(filter)} · speed ${this.deps.speed ?? DEFAULT_SPEED}`);
     let enqueued = 0;
     let filtered = 0;
     const outcome = await this.engine.run({
@@ -99,6 +110,8 @@ export class ScrapeRunner {
       maxLeads: this.deps.maxLeads ?? 80,
       signal,
       onLog: this.deps.onLog,
+      profile: this.profile,
+      detailLevel: this.detailLevel,
       onListing: (listing) => {
         if (filter && !passesFilter(listing, filter)) {
           filtered++;
@@ -135,7 +148,7 @@ export class ScrapeRunner {
       return outcome;
     }
 
-    this.deps.onLog("info", `claimed ${keyword}/${zip} — starting run (target: ${describeFilter(filter)})`);
+    this.deps.onLog("info", `claimed ${keyword}/${zip} — starting run (target: ${describeFilter(filter)} · speed ${this.deps.speed ?? DEFAULT_SPEED})`);
     let enqueued = 0;
     let duplicates = 0;
     let filtered = 0;
@@ -146,6 +159,8 @@ export class ScrapeRunner {
       maxLeads: this.deps.maxLeads ?? 80,
       signal,
       onLog: this.deps.onLog,
+      profile: this.profile,
+      detailLevel: this.detailLevel,
       onListing: (listing) => {
         if (filter && !passesFilter(listing, filter)) {
           filtered++;

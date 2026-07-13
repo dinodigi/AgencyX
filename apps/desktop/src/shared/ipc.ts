@@ -5,7 +5,7 @@
  * this in one shared file is what stops the two processes from drifting.
  */
 
-import type { LeadStage, QueryStatus, ScrapeFilter } from "@dinosales/types";
+import type { LeadStage, QueryStatus, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
 
 /** What the renderer is allowed to know about auth (never the raw token). */
 export interface AuthState {
@@ -31,6 +31,21 @@ export interface QueueItem {
   status: QueryStatus;
   lastScrapedAt?: string;
   resultCount?: number;
+  speed?: ScrapeSpeed;
+  detailLevel?: ScrapeDetailLevel;
+  queuedAt?: string;
+}
+
+/** Desktop auto-run state — surfaced to the renderer for the on/off control. */
+export interface AutoRunState {
+  /** Operator toggle. Persisted. */
+  enabled: boolean;
+  /** True while paused by a cool-down (e.g. after a block), with when it lifts. */
+  cooldownUntil?: number;
+  /** Count of runs auto-started in the current rolling hour (activity budget). */
+  ranThisHour: number;
+  /** Human note on what the loop is doing right now. */
+  status?: string;
 }
 
 /** A single line in the live run log the UI streams. */
@@ -94,10 +109,22 @@ export interface IpcApi {
 
   "device:getInfo": () => { deviceId: string; platform: string; appVersion: string };
 
-  "run:start": (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }) => RunState;
+  "run:start": (args: {
+    keyword: string;
+    zip: string;
+    mock?: boolean;
+    maxLeads?: number;
+    filter?: ScrapeFilter;
+    speed?: ScrapeSpeed;
+    detailLevel?: ScrapeDetailLevel;
+  }) => RunState;
   "run:claimNext": () => RunState;
   "run:stop": () => RunState;
   "run:getState": () => RunState;
+
+  // Desktop auto-run: claim the next queued search whenever idle. On by default.
+  "autorun:getState": () => AutoRunState;
+  "autorun:setEnabled": (enabled: boolean) => AutoRunState;
 
   "update:check": () => { status: "checking" | "current" | "available" | "downloading" | "ready" | "error"; version?: string };
 }
@@ -108,6 +135,7 @@ export interface IpcEvents {
   "sync:changed": SyncStats;
   "queue:changed": QueueItem[];
   "run:changed": RunState;
+  "autorun:changed": AutoRunState;
   "log:line": RunLogLine;
   "lead:captured": CapturedLead;
   "update:status": { status: string; version?: string; percent?: number };

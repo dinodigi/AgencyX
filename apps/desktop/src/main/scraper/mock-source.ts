@@ -58,14 +58,14 @@ export class MockSource implements ScrapeSource {
 
     for (let i = 0; i < want; i++) {
       if (opts.signal.aborted) return;
-      await betweenListingsDelay(opts.signal);
+      await betweenListingsDelay(opts.signal, opts.profile);
 
       if (this.cfg.blockAfter !== undefined && i >= this.cfg.blockAfter) {
         const { ScrapeBlockedError } = await import("./types.ts");
         throw new ScrapeBlockedError("[mock] simulated CAPTCHA");
       }
 
-      await actionDelay(opts.signal);
+      await actionDelay(opts.signal, opts.profile);
       const n = seed + i;
       const prefix = PREFIX[n % PREFIX.length]!;
       const name = `${prefix} ${label}`;

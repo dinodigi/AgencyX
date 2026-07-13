@@ -8,9 +8,11 @@
 
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import type { AuthState, CapturedLead, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
-import type { RawListing, ScrapeFilter } from "@dinosales/types";
-import { toScrapeFilter } from "@dinosales/types";
+import type { AuthState, AutoRunState, CapturedLead, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
+import type { RawListing, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
+import { toScrapeFilter, toScrapeSpeed, makeQueryDedupKey } from "@dinosales/types";
+import type { NormalizedSearch } from "@dinosales/ui/search";
+import { AgentXError } from "@dinosales/agentx-client";
 import { AuthManager, type SessionInput } from "./auth.ts";
 import { getOrCreateDeviceId } from "./device.ts";
 import { createOutbox, type OutboxStore } from "./outbox.ts";
@@ -21,6 +23,7 @@ import { MockSource } from "./scraper/mock-source.ts";
 import { GoogleMapsSource } from "./scraper/google-source.ts";
 import type { ScrapeSource } from "./scraper/types.ts";
 import { ensureRegistration, type Registration } from "./registration.ts";
+import { AutoRunController } from "./autorun.ts";
 
 // The delivery-scoped project token is baked at build time (public read/write
 // is still gated by the user JWT, so this is a project identifier, not a secret
@@ -38,8 +41,10 @@ let runState: RunState = { running: false, captured: 0 };
 let registration: Registration | null = null;
 let registeredOrgId: string | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
+let autorun: AutoRunController | null = null;
 
 const HEARTBEAT_MS = 5 * 60 * 1000; // coarse — presence, not real-time (limits undocumented)
+const WRITE_PACE_MS = 200; // gap between delivery-API writes (rate-limit courtesy)
 
 function platformName(): "windows" | "mac" {
   return process.platform === "darwin" ? "mac" : "windows";
@@ -106,10 +111,26 @@ function registerIpc(): void {
   ipcMain.handle("run:getState", () => runState);
   ipcMain.handle(
     "run:start",
-    (_e, args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }) => startRun(args),
+    (
+      _e,
+      args: {
+        keyword: string;
+        zip: string;
+        mock?: boolean;
+        maxLeads?: number;
+        filter?: ScrapeFilter;
+        speed?: ScrapeSpeed;
+        detailLevel?: ScrapeDetailLevel;
+      },
+    ) => startRun(args),
   );
   ipcMain.handle("run:claimNext", () => claimNextRun());
   ipcMain.handle("run:stop", () => stopRun());
+
+  ipcMain.handle("search:queue", (_e, n: NormalizedSearch) => queueSearchOnDesktop(n));
+
+  ipcMain.handle("autorun:getState", () => autorun?.state() ?? { enabled: true, ranThisHour: 0 });
+  ipcMain.handle("autorun:setEnabled", (_e, enabled: boolean) => autorun?.setEnabled(enabled) ?? { enabled, ranThisHour: 0 });
 }
 
 /**
@@ -180,7 +201,10 @@ function toCaptured(l: RawListing): CapturedLead {
 }
 
 /** Build a runner whose claim/complete/fail drive the real search_queries workflow. */
-function makeRunner(useRealSource: boolean, maxLeads = 80): ScrapeRunner {
+function makeRunner(
+  useRealSource: boolean,
+  opts: { maxLeads?: number; speed?: ScrapeSpeed; detailLevel?: ScrapeDetailLevel } = {},
+): ScrapeRunner {
   const client = auth.getClient()!;
   return new ScrapeRunner({
     outbox,
@@ -192,7 +216,9 @@ function makeRunner(useRealSource: boolean, maxLeads = 80): ScrapeRunner {
     onOutcome: (o) => setRunState({ lastOutcome: o.kind }),
     onCaptured: (listing) => send("lead:captured", toCaptured(listing)),
     now: () => new Date().toISOString(),
-    maxLeads,
+    maxLeads: opts.maxLeads ?? 80,
+    speed: opts.speed,
+    detailLevel: opts.detailLevel,
   });
 }
 
@@ -205,7 +231,101 @@ function setRunState(patch: Partial<RunState>): void {
   send("run:changed", runState);
 }
 
-async function startRun(args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }): Promise<RunState> {
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+function isRateLimit(e: unknown): boolean {
+  return e instanceof AgentXError && (e.status === 429 || /too many requests/i.test(e.message));
+}
+async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRateLimit(e) || attempt >= 5) throw e;
+      await sleep(500 * 2 ** attempt);
+    }
+  }
+}
+
+/**
+ * Desktop side of the shared Search form: create/queue one search_queries row per
+ * keyword × ZIP. Mirrors the web's queueSearch (paced + 429-aware). Auto-run (or
+ * "Start on this device") picks the rows up from the queue.
+ */
+async function queueSearchOnDesktop(n: NormalizedSearch): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const client = auth.getClient();
+  const state = auth.getState();
+  if (!client || state.status !== "signed-in" || !state.orgId) return { ok: false, error: "Not signed in." };
+  if (n.units === 0) return { ok: false, error: "Enter at least one keyword and one ZIP." };
+  if (n.units > 500) return { ok: false, error: `${n.units} units exceeds the 500-unit cap.` };
+
+  const orgId = state.orgId;
+  const base = {
+    max_leads: n.maxLeads,
+    target_website: n.filter.target_website,
+    min_reviews: n.filter.min_reviews,
+    max_reviews: n.filter.max_reviews,
+    min_rating: n.filter.min_rating,
+    speed: n.speed,
+    detail_level: n.detailLevel,
+  };
+
+  let created = 0;
+  let requeued = 0;
+  let skipped = 0;
+  try {
+    for (const keyword of n.keywords) {
+      for (const zip of n.zips) {
+        const dedup_key = makeQueryDedupKey(orgId, keyword, zip);
+        const res = await withBackoff(() => client.upsertSearchQuery({ org_id: orgId, dedup_key, keyword, zip, ...base }));
+        if (!res.alreadySynced) {
+          created++;
+        } else if (n.recoverage === "requeue") {
+          const current = await withBackoff(() => client.ax.search_queries.get(res.id));
+          const patch: Record<string, unknown> = { ...base };
+          if (current.status !== "running") {
+            patch.status = "pending";
+            patch.queued_at = new Date().toISOString();
+          }
+          await withBackoff(() => client.update("search_queries", res.id, patch));
+          requeued++;
+        } else {
+          skipped++;
+        }
+        await sleep(WRITE_PACE_MS);
+      }
+    }
+  } catch (e) {
+    const done = created + requeued + skipped;
+    const msg = isRateLimit(e)
+      ? `Queued ${done} of ${n.units}, then AgentX rate-limited. Re-submit — already-created units are skipped.`
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    return { ok: false, error: msg };
+  }
+
+  void listQueue();
+  const parts: string[] = [];
+  if (created) parts.push(`${created} queued`);
+  if (requeued) parts.push(`${requeued} re-queued`);
+  if (skipped) parts.push(`${skipped} already covered`);
+  return { ok: true, message: `${parts.join(" · ") || "Nothing to do"}.` };
+}
+
+/** Any run finishing — let the auto-run loop chain the next claim (or cool down). */
+function onRunFinished(outcome: { kind: string; backoffMs?: number }): void {
+  autorun?.notifyFinished(outcome.kind, outcome.backoffMs);
+}
+
+async function startRun(args: {
+  keyword: string;
+  zip: string;
+  mock?: boolean;
+  maxLeads?: number;
+  filter?: ScrapeFilter;
+  speed?: ScrapeSpeed;
+  detailLevel?: ScrapeDetailLevel;
+}): Promise<RunState> {
   const state = auth.getState();
   if (state.status !== "signed-in" || !state.orgId) {
     log("error", "cannot run: not signed in");
@@ -221,11 +341,12 @@ async function startRun(args: { keyword: string; zip: string; mock?: boolean; ma
 
   // Ad-hoc run: no queue row to claim; leads carry agency/device if registered.
   const ctx = currentContext(state.orgId);
-  void makeRunner(args.mock === false, args.maxLeads)
+  void makeRunner(args.mock === false, { maxLeads: args.maxLeads, speed: args.speed, detailLevel: args.detailLevel })
     .runAdhoc(args.keyword, args.zip, ctx, runAbort.signal, args.filter)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
       void sync.flushNow();
+      onRunFinished(outcome);
     })
     .catch((err) => {
       log("error", `run crashed: ${err instanceof Error ? err.message : String(err)}`);
@@ -253,7 +374,18 @@ async function claimNextRun(): Promise<RunState> {
   }
 
   let pending:
-    | { id: string; keyword: string; zip: string; max_leads?: number; target_website?: string; min_reviews?: number; max_reviews?: number }
+    | {
+        id: string;
+        keyword: string;
+        zip: string;
+        max_leads?: number;
+        target_website?: string;
+        min_reviews?: number;
+        max_reviews?: number;
+        min_rating?: number;
+        speed?: string;
+        detail_level?: string;
+      }
     | undefined;
   try {
     // FIFO: oldest queued first — so "Run next queued" runs what was queued first,
@@ -278,13 +410,19 @@ async function claimNextRun(): Promise<RunState> {
 
   // Queued searches ALWAYS scrape the real Google source — the queue is the
   // production path. (Dry-run/mock is an ad-hoc "Start run" option only.)
+  // Speed + detail come from the row so each search runs how it was queued.
   const filter = toScrapeFilter(pending);
-  void makeRunner(true, pending.max_leads)
+  void makeRunner(true, {
+    maxLeads: pending.max_leads,
+    speed: toScrapeSpeed(pending.speed),
+    detailLevel: pending.detail_level === "preview" ? "preview" : "full",
+  })
     .runQuery(pending.id, pending.keyword, pending.zip, currentContext(state.orgId), runAbort.signal, filter)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
       void sync.flushNow();
       void listQueue();
+      onRunFinished(outcome);
     })
     .catch((err) => {
       log("error", `run crashed: ${err instanceof Error ? err.message : String(err)}`);
@@ -314,6 +452,9 @@ async function listQueue(): Promise<QueueItem[]> {
       status: (r.status ?? "pending") as QueueItem["status"],
       lastScrapedAt: r.last_scraped_at,
       resultCount: r.result_count,
+      speed: toScrapeSpeed(r.speed),
+      detailLevel: r.detail_level === "preview" ? "preview" : "full",
+      queuedAt: r.queued_at,
     }));
     send("queue:changed", items);
     return items;
@@ -339,9 +480,23 @@ app.whenReady().then(async () => {
     onLog: log,
   });
 
+  autorun = new AutoRunController({
+    settingsPath: join(userData, "autorun.json"),
+    onChange: (s: AutoRunState) => send("autorun:changed", s),
+    log,
+    // Only claim when signed in, device-registered, and nothing already running.
+    canClaim: () => auth.getState().status === "signed-in" && !!registration?.deviceRowId && !runState.running,
+    claim: async () => {
+      if (runState.running) return false;
+      await claimNextRun();
+      return runState.running; // set synchronously when a pending row was claimed
+    },
+  });
+
   registerIpc();
   await createWindow();
   sync.start();
+  autorun.start();
 
   if (!IS_DEV) {
     const updater = initUpdater({ onStatus: (status, extra) => send("update:status", { status, ...extra }) });

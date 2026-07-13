@@ -5,7 +5,8 @@
  * and keep "0 results" distinct from a broken selector or a block.
  */
 
-import type { RawListing } from "@dinosales/types";
+import type { RawListing, SpeedProfile, ScrapeDetailLevel } from "@dinosales/types";
+import { SPEED_PROFILES, DEFAULT_SPEED, DEFAULT_DETAIL_LEVEL } from "@dinosales/types";
 import type { ScrapeSource, ScrapeQuery, ScrapeOutcome } from "./types.ts";
 import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
 
@@ -17,14 +18,25 @@ export interface EngineRunArgs {
   onLog: (level: "info" | "warn" | "error", message: string) => void;
   /** Called per captured listing — the runner enqueues it to the outbox here. */
   onListing: (listing: RawListing) => Promise<void> | void;
+  /** Human-pacing profile; defaults to balanced when omitted. */
+  profile?: SpeedProfile;
+  /** Discovery-only ("preview") vs open-each-listing ("full"). */
+  detailLevel?: ScrapeDetailLevel;
 }
 
 export class ScraperEngine {
-  async run({ source, query, maxLeads, signal, onLog, onListing }: EngineRunArgs): Promise<ScrapeOutcome> {
+  async run({ source, query, maxLeads, signal, onLog, onListing, profile, detailLevel }: EngineRunArgs): Promise<ScrapeOutcome> {
     let captured = 0;
     try {
       await source.open();
-      for await (const listing of source.search(query, { maxLeads, signal, onLog })) {
+      const opts = {
+        maxLeads,
+        signal,
+        onLog,
+        profile: profile ?? SPEED_PROFILES[DEFAULT_SPEED],
+        detailLevel: detailLevel ?? DEFAULT_DETAIL_LEVEL,
+      };
+      for await (const listing of source.search(query, opts)) {
         if (signal.aborted) break;
         await onListing(listing);
         captured++;

@@ -53,7 +53,6 @@ const GROUPS: { label: string; links: { href: string; label: string; icon: keyof
     label: "Acquisition",
     links: [
       { href: "/search", label: "Search", icon: "search" },
-      { href: "/batches", label: "Batch builder", icon: "batches" },
       { href: "/coverage", label: "Coverage", icon: "coverage" },
     ],
   },

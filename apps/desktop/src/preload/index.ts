@@ -5,8 +5,9 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
-import type { AuthState, QueueItem, SyncStats, RunLogLine, RunState, CapturedLead } from "../shared/ipc.ts";
-import type { ScrapeFilter } from "@dinosales/types";
+import type { AuthState, AutoRunState, QueueItem, SyncStats, RunLogLine, RunState, CapturedLead } from "../shared/ipc.ts";
+import type { ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
+import type { NormalizedSearch } from "@dinosales/ui/search";
 
 const api = {
   auth: {
@@ -27,17 +28,33 @@ const api = {
     getInfo: (): Promise<{ deviceId: string; platform: string; appVersion: string }> => ipcRenderer.invoke("device:getInfo"),
   },
   run: {
-    start: (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }): Promise<RunState> =>
-      ipcRenderer.invoke("run:start", args),
+    start: (args: {
+      keyword: string;
+      zip: string;
+      mock?: boolean;
+      maxLeads?: number;
+      filter?: ScrapeFilter;
+      speed?: ScrapeSpeed;
+      detailLevel?: ScrapeDetailLevel;
+    }): Promise<RunState> => ipcRenderer.invoke("run:start", args),
     claimNext: (): Promise<RunState> => ipcRenderer.invoke("run:claimNext"),
     stop: (): Promise<RunState> => ipcRenderer.invoke("run:stop"),
     getState: (): Promise<RunState> => ipcRenderer.invoke("run:getState"),
+  },
+  search: {
+    queue: (n: NormalizedSearch): Promise<{ ok: boolean; message?: string; error?: string }> =>
+      ipcRenderer.invoke("search:queue", n),
+  },
+  autorun: {
+    getState: (): Promise<AutoRunState> => ipcRenderer.invoke("autorun:getState"),
+    setEnabled: (enabled: boolean): Promise<AutoRunState> => ipcRenderer.invoke("autorun:setEnabled", enabled),
   },
   on: {
     authChanged: (cb: (s: AuthState) => void) => subscribe("auth:changed", cb),
     syncChanged: (cb: (s: SyncStats) => void) => subscribe("sync:changed", cb),
     queueChanged: (cb: (q: QueueItem[]) => void) => subscribe("queue:changed", cb),
     runChanged: (cb: (r: RunState) => void) => subscribe("run:changed", cb),
+    autorunChanged: (cb: (s: AutoRunState) => void) => subscribe("autorun:changed", cb),
     logLine: (cb: (l: RunLogLine) => void) => subscribe("log:line", cb),
     leadCaptured: (cb: (l: CapturedLead) => void) => subscribe("lead:captured", cb),
     updateStatus: (cb: (u: { status: string; version?: string; percent?: number }) => void) => subscribe("update:status", cb),

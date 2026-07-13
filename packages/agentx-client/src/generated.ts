@@ -245,6 +245,9 @@ export interface SearchQueries {
   target_website?: "any" | "missing" | "has";
   min_reviews?: number;
   max_reviews?: number;
+  min_rating?: number;
+  speed?: "careful" | "balanced" | "fast";
+  detail_level?: "full" | "preview";
   user?: { id: string; label: string };
   agency?: { id: string; label: string };
   device?: { id: string; label: string };
@@ -263,11 +266,14 @@ export interface SearchQueriesListOpts {
     target_website?: "any" | "missing" | "has";
     min_reviews?: number;
     max_reviews?: number;
+    min_rating?: number;
+    speed?: "careful" | "balanced" | "fast";
+    detail_level?: "full" | "preview";
     user?: string;
     agency?: string;
     device?: string;
   };
-  sort?: { field: "dedup_key" | "keyword" | "zip" | "status" | "queued_at" | "last_scraped_at" | "result_count" | "max_leads" | "target_website" | "min_reviews" | "max_reviews" | "user" | "agency" | "device"; dir: "asc" | "desc" };
+  sort?: { field: "dedup_key" | "keyword" | "zip" | "status" | "queued_at" | "last_scraped_at" | "result_count" | "max_leads" | "target_website" | "min_reviews" | "max_reviews" | "min_rating" | "speed" | "detail_level" | "user" | "agency" | "device"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -285,6 +291,9 @@ export interface SearchQueriesCreate {
   target_website?: "any" | "missing" | "has";
   min_reviews?: number;
   max_reviews?: number;
+  min_rating?: number;
+  speed?: "careful" | "balanced" | "fast";
+  detail_level?: "full" | "preview";
   user?: string;
   agency?: string;
   device?: string;

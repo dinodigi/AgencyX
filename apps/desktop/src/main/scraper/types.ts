@@ -5,7 +5,7 @@
  * (claim → scrape → outbox → sync) is testable without touching Google.
  */
 
-import type { RawListing } from "@dinosales/types";
+import type { RawListing, SpeedProfile, ScrapeDetailLevel } from "@dinosales/types";
 
 export interface ScrapeQuery {
   keyword: string;
@@ -19,6 +19,10 @@ export interface ScrapeSourceOptions {
   signal: AbortSignal;
   /** Structured status lines for the live run log. */
   onLog: (level: "info" | "warn" | "error", message: string) => void;
+  /** Human-pacing delay ranges for this run (careful/balanced/fast). */
+  profile: SpeedProfile;
+  /** "preview" = discovery only (don't open each listing); "full" = open each. */
+  detailLevel: ScrapeDetailLevel;
 }
 
 /**

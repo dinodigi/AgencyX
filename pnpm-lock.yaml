@@ -23,6 +23,9 @@ importers:
       '@dinosales/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@dinosales/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       better-sqlite3:
         specifier: ^11.8.0
         version: 11.10.0
@@ -166,10 +169,20 @@ importers:
         version: 5.9.3
 
   packages/ui:
+    dependencies:
+      '@dinosales/types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.17
+      react:
+        specifier: ^19.0.0
+        version: 19.2.7
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

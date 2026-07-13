@@ -99,6 +99,8 @@ export interface ScrapeFilter {
   minReviews?: number;
   /** Keep only listings with at most this many reviews (target weak listings). */
   maxReviews?: number;
+  /** Keep only listings rated at least this (0–5). */
+  minRating?: number;
 }
 
 /** True when a scraped listing matches the search's target filter. */
@@ -109,6 +111,7 @@ export function passesFilter(listing: RawListing, f: ScrapeFilter | undefined | 
   const reviews = listing.reviewCount ?? 0;
   if (typeof f.minReviews === "number" && reviews < f.minReviews) return false;
   if (typeof f.maxReviews === "number" && reviews > f.maxReviews) return false;
+  if (typeof f.minRating === "number" && (listing.rating ?? 0) < f.minRating) return false;
   return true;
 }
 
@@ -120,6 +123,7 @@ export function describeFilter(f: ScrapeFilter | undefined | null): string {
   if (f.targetWebsite === "has") parts.push("has website");
   if (typeof f.minReviews === "number") parts.push(`≥${f.minReviews} reviews`);
   if (typeof f.maxReviews === "number") parts.push(`≤${f.maxReviews} reviews`);
+  if (typeof f.minRating === "number") parts.push(`≥${f.minRating.toFixed(1)}★`);
   return parts.length ? parts.join(" · ") : "no filter";
 }
 
@@ -128,10 +132,49 @@ export function toScrapeFilter(row: {
   target_website?: string | null;
   min_reviews?: number | null;
   max_reviews?: number | null;
+  min_rating?: number | null;
 }): ScrapeFilter {
   const f: ScrapeFilter = {};
   if (row.target_website === "missing" || row.target_website === "has") f.targetWebsite = row.target_website;
   if (typeof row.min_reviews === "number") f.minReviews = row.min_reviews;
   if (typeof row.max_reviews === "number") f.maxReviews = row.max_reviews;
+  if (typeof row.min_rating === "number" && row.min_rating > 0) f.minRating = row.min_rating;
   return f;
 }
+
+// ---------------------------------------------------------------------------
+// Automation speed — how aggressively the scraper paces itself. This is the
+// anti-detection dial the operator controls per search. Presets map to concrete
+// delay ranges (ms) the human-pacing helpers read; there is deliberately no
+// "instant" — the safety model is built on looking like a person.
+// ---------------------------------------------------------------------------
+
+export const SCRAPE_SPEEDS = ["careful", "balanced", "fast"] as const;
+export type ScrapeSpeed = (typeof SCRAPE_SPEEDS)[number];
+export const DEFAULT_SPEED: ScrapeSpeed = "balanced";
+
+export interface SpeedProfile {
+  /** Pause between whole listings — the dominant human-pacing knob. */
+  betweenListingsMs: readonly [number, number];
+  /** Short settle after a navigation/action within a listing. */
+  settleMs: readonly [number, number];
+  /** Pause between feed scroll steps during discovery. */
+  scrollPauseMs: readonly [number, number];
+  /** Rough minutes to expect for ~50 leads at this speed (for UI estimates). */
+  minsPer50: number;
+}
+
+export const SPEED_PROFILES: Record<ScrapeSpeed, SpeedProfile> = {
+  careful: { betweenListingsMs: [8000, 20000], settleMs: [800, 2000], scrollPauseMs: [1400, 2800], minsPer50: 13 },
+  balanced: { betweenListingsMs: [4000, 9000], settleMs: [500, 1400], scrollPauseMs: [900, 1700], minsPer50: 7 },
+  fast: { betweenListingsMs: [2000, 4000], settleMs: [300, 900], scrollPauseMs: [500, 1100], minsPer50: 4 },
+};
+
+/** Coerce an unknown string (e.g. a search_queries.speed value) to a valid speed. */
+export function toScrapeSpeed(raw: string | null | undefined): ScrapeSpeed {
+  return (SCRAPE_SPEEDS as readonly string[]).includes(raw ?? "") ? (raw as ScrapeSpeed) : DEFAULT_SPEED;
+}
+
+export const SCRAPE_DETAIL_LEVELS = ["full", "preview"] as const;
+export type ScrapeDetailLevel = (typeof SCRAPE_DETAIL_LEVELS)[number];
+export const DEFAULT_DETAIL_LEVEL: ScrapeDetailLevel = "full";

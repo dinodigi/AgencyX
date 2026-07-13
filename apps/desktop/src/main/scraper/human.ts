@@ -3,7 +3,15 @@
  * The anti-detection model is structural — low volume, one query at a time,
  * jittered delays that look like a person, not a loop. These helpers centralize
  * that so the whole engine stays "quiet."
+ *
+ * Delay magnitudes come from a SpeedProfile (careful/balanced/fast) the operator
+ * picks per search — see SPEED_PROFILES in @dinosales/types. When no profile is
+ * passed the balanced defaults apply, so callers that don't care still behave.
  */
+
+import { SPEED_PROFILES, DEFAULT_SPEED, type SpeedProfile } from "@dinosales/types";
+
+const DEFAULT_PROFILE = SPEED_PROFILES[DEFAULT_SPEED];
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -25,14 +33,24 @@ export function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-/** Jittered pause between actions on a listing — sub-second, human-ish. */
-export function actionDelay(signal?: AbortSignal): Promise<void> {
-  return sleep(randInt(350, 1400), signal);
+/** Uniform int within a [min, max] range tuple. */
+export function randRange(range: readonly [number, number]): number {
+  return randInt(range[0], range[1]);
 }
 
-/** Longer, more variable pause between whole listings / queries. */
-export function betweenListingsDelay(signal?: AbortSignal): Promise<void> {
-  return sleep(randInt(1200, 4200), signal);
+/** Short settle after a nav/action within a listing (profile-scaled). */
+export function actionDelay(signal?: AbortSignal, profile: SpeedProfile = DEFAULT_PROFILE): Promise<void> {
+  return sleep(randRange(profile.settleMs), signal);
+}
+
+/** The dominant human-pacing pause between whole listings (profile-scaled). */
+export function betweenListingsDelay(signal?: AbortSignal, profile: SpeedProfile = DEFAULT_PROFILE): Promise<void> {
+  return sleep(randRange(profile.betweenListingsMs), signal);
+}
+
+/** Pause between feed scroll steps during discovery (profile-scaled). */
+export function scrollPause(signal?: AbortSignal, profile: SpeedProfile = DEFAULT_PROFILE): Promise<void> {
+  return sleep(randRange(profile.scrollPauseMs), signal);
 }
 
 // Believable desktop viewport + UA ranges. Kept deliberately narrow to common

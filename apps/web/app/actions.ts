@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { AgentXError } from "@dinosales/agentx-client";
-import { makeQueryDedupKey, normalizeKeyword, normalizeZip } from "@dinosales/types";
+import { makeQueryDedupKey } from "@dinosales/types";
+import type { NormalizedSearch } from "@dinosales/ui/search";
 import { withClient } from "@/lib/agentx.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -31,139 +32,94 @@ async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
 /** Gap between calls in a write loop — stay politely under the limiter. */
 const WRITE_PACE_MS = 200;
 
-export interface BatchResult {
+export interface QueueSearchResult {
   ok: boolean;
   created?: number;
-  existing?: number;
+  requeued?: number;
+  skipped?: number;
   total?: number;
+  message?: string;
   error?: string;
 }
 
-function lines(raw: FormDataEntryValue | null): string[] {
-  return String(raw ?? "")
-    .split(/[\n,]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 /**
- * Build a keyword × ZIP batch (§8). Cross-product → SearchQueries, one per unit,
- * deduped per org by dedup_key so re-submitting a batch is safe (existing units
- * are surfaced, not duplicated — upsertSearchQuery resolves the unique conflict).
+ * The one search action — powers both Single and Batch (Single is a batch of
+ * one). Takes the normalized unit list + target filter + pacing from the shared
+ * SearchForm and writes one search_queries row per keyword × ZIP, carrying speed
+ * and detail_level so the desktop runs each search exactly how it was queued.
+ *
+ * Re-submitting is safe: existing units are either left as-is ("skip") or bumped
+ * back to pending with refreshed options ("requeue") — never duplicated. All
+ * writes pace + back off around AgentX's delivery-API rate limit.
  */
-export async function createBatch(_prev: BatchResult, formData: FormData): Promise<BatchResult> {
+export async function queueSearch(n: NormalizedSearch): Promise<QueueSearchResult> {
   const ctx = await withClient();
   if (!ctx) return { ok: false, error: "Not signed in." };
+  if (n.units === 0) return { ok: false, error: "Enter at least one keyword and one ZIP." };
+  if (n.units > 500) return { ok: false, error: `${n.units} units exceeds the 500-unit safety cap for one batch.` };
 
-  const keywords = [...new Set(lines(formData.get("keywords")).map(normalizeKeyword))];
-  const zips = [...new Set(lines(formData.get("zips")).map(normalizeZip))].filter((z) => z.length >= 3);
-  const maxLeads = Math.max(1, Math.min(200, Number(formData.get("maxLeads")) || 50));
-
-  if (keywords.length === 0 || zips.length === 0) {
-    return { ok: false, error: "Enter at least one keyword and one ZIP." };
-  }
-  const total = keywords.length * zips.length;
-  if (total > 500) {
-    return { ok: false, error: `${total} units exceeds the 500-unit safety cap for one batch.` };
-  }
+  const base = {
+    max_leads: n.maxLeads,
+    target_website: n.filter.target_website,
+    min_reviews: n.filter.min_reviews,
+    max_reviews: n.filter.max_reviews,
+    min_rating: n.filter.min_rating,
+    speed: n.speed,
+    detail_level: n.detailLevel,
+  };
 
   let created = 0;
-  let existing = 0;
+  let requeued = 0;
+  let skipped = 0;
   try {
-    for (const keyword of keywords) {
-      for (const zip of zips) {
+    for (const keyword of n.keywords) {
+      for (const zip of n.zips) {
         const dedup_key = makeQueryDedupKey(ctx.session.orgId, keyword, zip);
         const res = await withBackoff(() =>
-          ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, max_leads: maxLeads }),
+          ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, ...base }),
         );
-        if (res.alreadySynced) existing++;
-        else created++;
+        if (!res.alreadySynced) {
+          created++;
+        } else if (n.recoverage === "requeue") {
+          // Existing coverage — refresh options and bump to the back of the FIFO
+          // line, unless a device is scraping it right now.
+          const current = await withBackoff(() => ctx.ax.search_queries.get(res.id));
+          const patch: Record<string, unknown> = { ...base };
+          if (current.status !== "running") {
+            patch.status = "pending";
+            patch.queued_at = new Date().toISOString();
+          }
+          await withBackoff(() => ctx.client.update("search_queries", res.id, patch));
+          requeued++;
+        } else {
+          skipped++;
+        }
         await sleep(WRITE_PACE_MS);
       }
     }
   } catch (e) {
-    const done = created + existing;
+    const done = created + requeued + skipped;
     const msg = isRateLimit(e)
-      ? `Queued ${done} of ${total}, then AgentX kept rate-limiting. Re-submit the same batch — already-created units are skipped, not duplicated.`
+      ? `Queued ${done} of ${n.units}, then AgentX kept rate-limiting. Re-submit — already-created units are skipped, not duplicated.`
       : e instanceof Error
         ? e.message
         : String(e);
-    return { ok: false, error: msg, created, existing };
+    return { ok: false, error: msg, created, requeued, skipped };
   }
 
   revalidatePath("/coverage");
-  return { ok: true, created, existing, total };
-}
-
-export interface SearchResult {
-  ok: boolean;
-  existing?: boolean;
-  keyword?: string;
-  zip?: string;
-  error?: string;
-}
-
-type TargetWebsite = "any" | "missing" | "has";
-
-function numOrUndef(raw: FormDataEntryValue | null): number | undefined {
-  const s = String(raw ?? "").trim();
-  if (s === "") return undefined;
-  const n = Math.max(0, Math.floor(Number(s)));
-  return Number.isFinite(n) ? n : undefined;
-}
-
-/**
- * Single search with target options (§8). Creates one keyword×ZIP search_queries
- * row the desktop will scrape, carrying the "who to keep" filter (website /
- * review-count). Re-searching the same unit updates its options and re-queues it
- * (unless a device is mid-run on it). This is the richer sibling of the batch
- * builder — same underlying queue, more control per search.
- */
-export async function createSearch(_prev: SearchResult, formData: FormData): Promise<SearchResult> {
-  const ctx = await withClient();
-  if (!ctx) return { ok: false, error: "Not signed in." };
-
-  const keyword = normalizeKeyword(String(formData.get("keyword") ?? ""));
-  const zip = normalizeZip(String(formData.get("zip") ?? ""));
-  if (!keyword) return { ok: false, error: "Enter a keyword." };
-  if (zip.length < 3) return { ok: false, error: "Enter a valid ZIP." };
-
-  const maxLeads = Math.max(1, Math.min(200, Number(formData.get("maxLeads")) || 50));
-  const twRaw = String(formData.get("target_website") ?? "any");
-  const target_website: TargetWebsite = twRaw === "missing" || twRaw === "has" ? twRaw : "any";
-  const min_reviews = numOrUndef(formData.get("min_reviews"));
-  const max_reviews = numOrUndef(formData.get("max_reviews"));
-
-  if (min_reviews !== undefined && max_reviews !== undefined && min_reviews > max_reviews) {
-    return { ok: false, error: "Min reviews can't be greater than max reviews." };
-  }
-
-  const dedup_key = makeQueryDedupKey(ctx.session.orgId, keyword, zip);
-  const options = { max_leads: maxLeads, target_website, min_reviews, max_reviews };
-
-  let existing = false;
-  try {
-    const res = await withBackoff(() =>
-      ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, ...options }),
-    );
-    existing = res.alreadySynced;
-    if (res.alreadySynced) {
-      // Existing coverage — refresh its options and re-queue it for a new pass,
-      // unless a device is scraping it right now.
-      const current = await ctx.ax.search_queries.get(res.id);
-      const patch: Record<string, unknown> = { ...options };
-      if (current.status !== "running") {
-        patch.status = "pending";
-        patch.queued_at = new Date().toISOString(); // re-queued now — back of the FIFO line
-      }
-      await withBackoff(() => ctx.client.update("search_queries", res.id, patch));
-    }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-
-  revalidatePath("/coverage");
-  return { ok: true, existing, keyword, zip };
+  const parts: string[] = [];
+  if (created) parts.push(`${created} queued`);
+  if (requeued) parts.push(`${requeued} re-queued`);
+  if (skipped) parts.push(`${skipped} already covered (skipped)`);
+  return {
+    ok: true,
+    created,
+    requeued,
+    skipped,
+    total: n.units,
+    message: `${parts.join(" · ") || "Nothing to do"}. The desktop scrapes queued searches when it's idle.`,
+  };
 }
 
 export interface DeleteResult {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { QueueItem } from "../../shared/ipc.ts";
+import { AutoRunToggle } from "./AutoRunToggle.tsx";
 
 const STATUS_CLASS: Record<QueueItem["status"], string> = {
   pending: "pill pending",
@@ -24,9 +25,12 @@ export function QueuePanel({ queue }: { queue: QueueItem[] }) {
     <section className="card panel">
       <div className="panel-head">
         <h2>Search queue</h2>
-        <button className="ghost" onClick={refresh} disabled={refreshing}>
-          {refreshing ? "…" : "Refresh"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <AutoRunToggle />
+          <button className="ghost" onClick={refresh} disabled={refreshing}>
+            {refreshing ? "…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {queue.length === 0 ? (

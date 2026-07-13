@@ -715,6 +715,35 @@
           "publicRead": true
         },
         {
+          "name": "min_rating",
+          "type": "number",
+          "label": "Min Rating",
+          "min": 0,
+          "max": 5,
+          "publicRead": true
+        },
+        {
+          "name": "speed",
+          "type": "enum",
+          "label": "Speed",
+          "options": [
+            "careful",
+            "balanced",
+            "fast"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "detail_level",
+          "type": "enum",
+          "label": "Detail Level",
+          "options": [
+            "full",
+            "preview"
+          ],
+          "publicRead": true
+        },
+        {
           "name": "user",
           "type": "relation",
           "label": "User",

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLiveState } from "../App.tsx";
 import { QueuePanel } from "./QueuePanel.tsx";
-import { RunControls } from "./RunControls.tsx";
+import { NewSearch } from "./NewSearch.tsx";
 import { RunLog } from "./RunLog.tsx";
 import { CapturedLeads } from "./CapturedLeads.tsx";
 import { StatusBar } from "./StatusBar.tsx";
@@ -32,7 +32,7 @@ export function Dashboard({ email, onSignOut }: { email: string; onSignOut: () =
 
       <main className="grid">
         <div className="col">
-          <RunControls />
+          <NewSearch />
           <QueuePanel queue={queue} />
         </div>
         <div className="col">
