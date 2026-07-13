@@ -1,79 +1,90 @@
 /**
- * Centralized Google Maps selectors (§5.2). Google's DOM changes often, so every
- * brittle anchor lives HERE — a break is a one-file fix. Prefer stable anchors
- * (aria roles, data-item-id attributes) over CSS classes, which Google rotates.
+ * Centralized Google Maps anchors + parsers (§5.2). Google rotates CSS classes
+ * constantly, so NOTHING here keys off a class name — every anchor is a stable
+ * primitive verified on a fresh, anonymous session (2026-07-13 recon):
  *
- * TUNE against real output (roadmap §12.5). The class names below (hfpxzc,
- * DUwDvf, F7nice) are Google's current ones and DO drift — when a field stops
- * extracting, update its line here.
+ *   • the results feed is `div[role="feed"]`, each result an `a[href*="/maps/place/"]`
+ *     whose `aria-label` IS the business name;
+ *   • the place URL carries both ids — the `/g/…` Knowledge-Graph MID (`!16s`) and
+ *     the CID hex pair (`!1s`); MID is preferred (most stable, matches Search);
+ *   • detail reads off `h1`, `data-item-id` action buttons, and `aria-label`s
+ *     ("4.6 stars", "41 reviews") — never the DUwDvf/F7nice/Nv2PK classes that drift.
+ *
+ * We stay on maps.google.com deliberately: a cold session hitting google.com/search
+ * (`tbm=lcl`, the Knowledge Panel) trips the /sorry unusual-traffic block; Maps
+ * tolerates the anonymous sessions our scraper actually runs.
  */
 
 export const MAPS = {
-  /** Search results are served at this URL shape; keyword+zip are URL-encoded. */
+  /** Maps search for a keyword near a ZIP (Maps tolerates cold sessions; Search doesn't). */
   searchUrl(keyword: string, zip: string): string {
-    const q = encodeURIComponent(`${keyword} ${zip}`);
-    return `https://www.google.com/maps/search/${q}`;
+    return `https://www.google.com/maps/search/${encodeURIComponent(`${keyword} near ${zip}`)}`;
   },
 
-  /** The scrollable results feed (role=feed is stable across redesigns). */
+  /** The scrollable results list — role=feed is stable across redesigns. */
   resultsFeed: 'div[role="feed"]',
-
-  /**
-   * Each result is an <a> whose aria-label IS the business name and whose href
-   * holds the place id. hfpxzc is Google's current card class; the href form is
-   * the stable fallback.
-   */
-  resultCard: 'a.hfpxzc, div[role="feed"] a[href*="/maps/place/"]',
-
-  /** "No results" sentinel — distinguishes an empty search from a selector break. */
-  noResults: 'div.section-no-results, div[aria-label*="no results" i]',
-
+  /** Each result is an anchor to a place; its aria-label is the business name. */
+  resultLink: 'a[href*="/maps/place/"]',
   /** CAPTCHA / unusual-traffic interstitial — triggers cool-down, never bypass. */
   captcha: 'iframe[src*="recaptcha"], form#captcha-form, div#recaptcha',
 
-  /** Detail panel (opened per card) — the source of rich fields. Scope to it so
-   *  we never grab the feed's "Results" heading. */
+  /** Detail-panel anchors — all stable primitives (no class names). */
   detail: {
-    panel: 'div[role="main"]',
-    // Business-name h1 in the detail panel (DUwDvf is the current class).
-    name: 'div[role="main"] h1.DUwDvf, div[role="main"] h1',
-    // Action buttons carry data-item-id — the most stable rich-field anchors.
-    phone: 'button[data-item-id^="phone:tel:"], button[data-item-id^="phone:"]',
-    website: 'a[data-item-id="authority"], a[aria-label^="Website:" i]',
-    address: 'button[data-item-id="address"], button[aria-label^="Address:" i]',
-    // Category sits in a button just under the name.
-    category: 'button[jsaction*="category"], button.DkEaL',
-    // Rating + review count. The rating is the visible number span; the review
-    // count is a span/button whose aria-label reads "N reviews".
-    ratingValue: 'div.F7nice span[aria-hidden="true"]',
-    starsLabel: 'span[role="img"][aria-label*="star" i]',
-    reviewsCount: 'div.F7nice button[aria-label*="review" i], div.F7nice span[aria-label*="review" i], button[aria-label*="reviews" i]',
-    // Hours: the open-hours block; full week is behind an aria-label on the toggle.
-    hours: '[jsaction*="openhours"] [aria-label], div.t39EBf[aria-label], [aria-label*="Hours" i]',
-    // "Claim this business" only shows on UNCLAIMED listings — its presence = unclaimed.
-    claimLink: 'a[href*="/maps/business"], button[aria-label*="Claim this business" i]',
-    priceLevel: 'span[aria-label*="Price:" i], span[aria-label*="Price per" i]',
-    photoCountBtn: 'button[aria-label*="photo" i]',
+    name: "h1",
+    phone: 'button[data-item-id^="phone:tel:"]',
+    website: 'a[data-item-id="authority"]',
+    address: 'button[data-item-id="address"]',
+    /** Only present on UNCLAIMED listings — its absence = claimed. */
+    claimLink: 'button[aria-label*="Claim this business" i], a[href*="/maps/business"]',
   },
 } as const;
 
-/** Parse "4.6 stars 214 reviews" (aria-label) OR "4.6(214)" (F7nice text). */
-export function parseRatingLabel(label: string | null | undefined): { rating?: number; reviewCount?: number } {
-  if (!label) return {};
-  const rating = label.match(/([\d.]+)\s*stars?/i) ?? label.match(/^\s*([\d.]+)/);
-  const reviews = label.match(/([\d,]+)\s*reviews?/i) ?? label.match(/\(([\d,]+)\)/);
-  return {
-    rating: rating ? Number(rating[1]) : undefined,
-    reviewCount: reviews ? Number(reviews[1]!.replace(/,/g, "")) : undefined,
-  };
+/**
+ * Extract Google's stable ids from a Maps place URL. The `/g/…` MID lives in the
+ * `!16s` param (URL-encoded `%2Fg%2F…`); the CID hex pair lives in `!1s`.
+ * Returns both when present so callers can prefer the MID and fall back to CID.
+ */
+export function extractPlaceIds(url: string): { mid: string | null; cid: string | null } {
+  let mid: string | null = null;
+  const m = url.match(/!16s(%2[Ff]g%2[Ff][0-9a-z]+|\/g\/[0-9a-z]+)/i);
+  if (m) {
+    try {
+      mid = decodeURIComponent(m[1]!);
+    } catch {
+      mid = m[1]!.replace(/%2[Ff]/gi, "/");
+    }
+  }
+  const cid = url.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i)?.[1] ?? null;
+  return { mid, cid };
 }
 
-/** Extract Google's stable place id / CID from a maps place URL. */
-export function placeIdFromUrl(url: string): string | null {
-  const ftid = url.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
-  if (ftid) return ftid[1]!;
-  const cid = url.match(/[?&]cid=(\d+)/);
-  if (cid) return cid[1]!;
-  const dataHex = url.match(/(0x[0-9a-f]+:0x[0-9a-f]+)/i);
-  return dataHex ? dataHex[1]! : null;
+/** The stable identifier for a place: MID → CID → a name slug (last resort). */
+export function bestPlaceId(url: string, name: string): string {
+  const { mid, cid } = extractPlaceIds(url);
+  return mid ?? cid ?? `name:${name.trim().toLowerCase().replace(/\s+/g, "-")}`;
+}
+
+/** "4.6 stars" (or "4.6 stars ") → 4.6, rejecting anything outside 0–5. */
+export function parseStars(aria: string | null | undefined): number | undefined {
+  const m = aria?.trim().match(/^([\d.]+)\s*stars?$/i);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return n >= 0 && n <= 5 ? n : undefined;
+}
+
+/** "41 reviews" → 41. Anchored so it ignores histogram rows like "5 stars, 41 reviews". */
+export function parseReviews(aria: string | null | undefined): number | undefined {
+  const m = aria?.trim().match(/^\(?([\d,]+)\)?\s*reviews?$/i);
+  if (!m) return undefined;
+  const n = Number(m[1]!.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Clean a phone from either the "Phone: (213) 468-8333" aria-label or the
+ *  "phone:tel:+12134688333" data-item-id. */
+export function parsePhone(aria: string | null, itemId: string | null): string | undefined {
+  const fromAria = aria?.replace(/^Phone:\s*/i, "").trim();
+  if (fromAria) return fromAria;
+  const fromId = itemId?.replace(/^phone:tel:/i, "").trim();
+  return fromId || undefined;
 }

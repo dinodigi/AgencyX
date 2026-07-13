@@ -1,26 +1,28 @@
 /**
- * Real Google Maps source (§5.2), TWO-PHASE (as designed):
+ * Real Google Maps source (§5.2), TWO-PHASE, rebuilt 2026-07-13 onto STABLE
+ * anchors after a fresh-session recon proved the old class-based selectors were
+ * the cause of the shaky data ("Results" as a name, 0 reviews, 5.0 ratings):
  *
- *   Phase 1 — harvest the feed: scroll the results list and read each card's
- *     quick-preview data (name, rating, reviews, category, address) directly from
- *     the feed. Fast, low-risk, and gets SOMETHING for every result.
- *   Phase 2 — open each listing: navigate into the place page and read the rich
- *     detail the card doesn't have (phone, website, hours, claimed status).
+ *   Phase 1 — discovery: scroll the results feed and read each card's stable bits:
+ *     the business NAME from the result link's aria-label, the rating from the
+ *     stars aria-label, and both place ids (the /g/ MID + CID) from the href.
+ *   Phase 2 — detail: open each place and read the authoritative fields off the
+ *     h1, the data-item-id action buttons (phone/website), and the "N stars" /
+ *     "N reviews" aria-labels. No CSS class is referenced anywhere.
  *
- * Each yielded lead is the card data enriched with detail — so even if a
- * listing's detail fails to load, the phase-1 preview still produces a lead.
+ * We stay on maps.google.com on purpose: a cold session on google.com/search
+ * (tbm=lcl / the Knowledge Panel — which carry the cleaner selectors) trips the
+ * /sorry unusual-traffic block; Maps tolerates the anonymous sessions we run.
  *
- * Extraction runs IN THE PAGE via page.evaluate with multiple fallbacks, so a
- * single renamed class doesn't wipe a field. Playwright drives a real Chrome
- * channel with the stealth plugin. Selectors still drift — logs narrate each
- * phase so tuning is targeted (roadmap §12.5).
+ * All raw extraction happens IN the page and returns plain strings; parsing lives
+ * in Node (selectors.ts) so it's testable and out of the fragile evaluate body.
  */
 
 import type { RawListing } from "@dinosales/types";
 import type { ScrapeQuery, ScrapeSource, ScrapeSourceOptions } from "./types.ts";
 import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
 import { actionDelay, betweenListingsDelay, scrollPause, randomUserAgent, randomViewport, sleep } from "./human.ts";
-import { MAPS, placeIdFromUrl } from "./selectors.ts";
+import { MAPS, bestPlaceId, extractPlaceIds, parseStars, parseReviews, parsePhone } from "./selectors.ts";
 
 // Minimal Playwright surface we depend on (declared locally so this file
 // typechecks without the package installed; the runtime objects are real).
@@ -41,33 +43,26 @@ interface PwBrowser {
   close(): Promise<void>;
 }
 
-/** Raw card data harvested from the feed in phase 1 (in-page shapes). */
+/** Raw card strings harvested from the feed in phase 1 (parsed in Node). */
 interface CardRaw {
   href: string;
-  name: string;
-  ratingLabel: string; // "4.7 stars 123 reviews" (aria-label on the stars)
-  ratingText: string; // "4.7"
-  reviewText: string; // "(123)"
-  infoText: string; // "Plumber · 123 Main St · Open"
+  name: string; // the link's aria-label = the business name
+  starsAria: string; // "4.6 stars"
+  cardText: string; // scoped to the card, for best-effort reviews/category/address
 }
 
-/**
- * Detail fields harvested from a place page in phase 2 — the AUTHORITATIVE
- * source. The map feed only gives names; everything worth having (reviews,
- * rating, hours, contact, category) is read here, from the open listing.
- */
+/** Raw detail strings read from a place page (parsed in Node). */
 interface DetailRaw {
-  name: string | null;
-  category: string | null;
-  rating: number | null;
-  reviewCount: number | null;
-  phone: string | null;
+  url: string;
+  h1: string | null;
+  phoneAria: string | null;
+  phoneId: string | null;
   website: string | null;
-  address: string | null;
+  addressAria: string | null;
+  ratingAria: string | null; // "5.0 stars"
+  reviewsAria: string | null; // "41 reviews"
   hours: string | null;
-  priceLevel: string | null;
-  photoCount: number | null;
-  claimed: boolean;
+  claimPresent: boolean;
 }
 
 export interface GoogleSourceConfig {
@@ -110,11 +105,14 @@ export class GoogleMapsSource implements ScrapeSource {
   async *search(query: ScrapeQuery, opts: ScrapeSourceOptions): AsyncIterable<RawListing> {
     if (!this.ctx) throw new Error("source not open()ed");
     const page = await this.ctx.newPage();
-    opts.onLog("info", `Chrome launched — opening Google Maps: "${query.keyword}" in ${query.zip}`);
+    opts.onLog("info", `Chrome launched — opening Google Maps: "${query.keyword}" near ${query.zip}`);
     await page.goto(MAPS.searchUrl(query.keyword, query.zip), { waitUntil: "domcontentloaded", timeout: 30000 });
     await actionDelay(opts.signal, opts.profile);
     opts.onLog("info", `page loaded (${page.url().slice(0, 70)}…)`);
 
+    if (/\/sorry\//.test(page.url())) {
+      throw new ScrapeBlockedError("Google 'unusual traffic' block (/sorry) — cooling down");
+    }
     if (/consent\.google|\/consent/i.test(page.url())) {
       opts.onLog("warn", "Google is showing a consent page — dismiss it once in the Chrome window, then re-run");
     }
@@ -125,19 +123,21 @@ export class GoogleMapsSource implements ScrapeSource {
       throw new SelectorMissError("resultsFeed", "results feed not found");
     }
 
-    // ── Phase 1: harvest the feed ──────────────────────────────────────────
-    opts.onLog("info", "phase 1 — scrolling the map view and reading preview cards…");
+    // ── Phase 1: discovery ─────────────────────────────────────────────────
+    opts.onLog("info", "phase 1 — scrolling the results and reading names / ratings / ids…");
     const cards = await this.harvestFeed(page, opts);
     if (cards.length === 0) {
-      opts.onLog("warn", "no result cards read from the feed (card selectors need tuning)");
+      opts.onLog("warn", "no result cards read from the feed (feed anchors need tuning)");
       return;
     }
     const targets = cards.slice(0, opts.maxLeads);
-    const sample = targets[0]!;
-    opts.onLog("info", `phase 1 — ${targets.length} businesses in the map view. sample: "${sample.name}" | rating "${sample.ratingLabel || sample.ratingText}" | info "${sample.infoText.slice(0, 60)}"`);
+    const sample = this.parseCard(targets[0]!);
+    opts.onLog(
+      "info",
+      `phase 1 — ${targets.length} businesses. sample: "${sample.businessName}" · ${sample.rating ?? "?"}★ · id ${sample.placeId.slice(0, 22)}`,
+    );
 
-    // Preview mode: return the feed cards without opening each listing. Fast and
-    // low-risk, but no phone/website/hours — used for a quick coverage sweep.
+    // Preview mode: return the feed cards without opening each listing.
     if (opts.detailLevel === "preview") {
       opts.onLog("info", "preview mode — returning feed cards without opening listings");
       for (const c of targets) {
@@ -148,10 +148,8 @@ export class GoogleMapsSource implements ScrapeSource {
       return;
     }
 
-    // ── Phase 2: open each listing and read the real data ──────────────────
-    // The listing — not the map card — is where the focus is. We read reviews,
-    // rating, hours, contact and category HERE; the card is only a fallback.
-    opts.onLog("info", "phase 2 — opening each listing to read reviews / rating / hours / contact…");
+    // ── Phase 2: detail (authoritative) ────────────────────────────────────
+    opts.onLog("info", "phase 2 — opening each listing for reviews / rating / phone / website / hours…");
     let done = 0;
     for (const c of targets) {
       if (opts.signal.aborted) return;
@@ -161,29 +159,27 @@ export class GoogleMapsSource implements ScrapeSource {
       try {
         await page.goto(c.href, { waitUntil: "domcontentloaded", timeout: 20000 });
         await actionDelay(opts.signal, opts.profile);
+        if (/\/sorry\//.test(page.url())) throw new ScrapeBlockedError("Google /sorry block during detail");
         await this.assertNotBlocked(page);
-        await this.waitForDetail(page, opts.signal); // let the place panel render before reading
-        detail = await this.extractDetail(page);
+        await this.waitForDetail(page, opts.signal);
+        detail = await this.readDetail(page);
       } catch (err) {
         if (err instanceof ScrapeBlockedError) throw err;
-        opts.onLog("warn", `"${quick.businessName}": detail failed (${err instanceof Error ? err.message : String(err)}) — feed preview only`);
+        opts.onLog("warn", `"${quick.businessName}": detail failed (${err instanceof Error ? err.message : String(err)}) — feed data only`);
       }
 
-      // Listing is authoritative; fall back to the feed card only per-field when
-      // detail is missing (e.g. the place panel failed to load).
+      const ids = detail ? extractPlaceIds(detail.url) : { mid: null, cid: null };
       const merged: RawListing = {
-        placeId: quick.placeId,
-        businessName: detail?.name || quick.businessName,
-        category: detail?.category ?? quick.category,
-        rating: detail?.rating ?? quick.rating,
-        reviewCount: detail?.reviewCount ?? quick.reviewCount,
-        phone: detail?.phone ?? undefined,
+        placeId: ids.mid ?? ids.cid ?? quick.placeId,
+        businessName: detail?.h1 || quick.businessName,
+        category: quick.category,
+        rating: (detail ? parseStars(detail.ratingAria) : undefined) ?? quick.rating,
+        reviewCount: (detail ? parseReviews(detail.reviewsAria) : undefined) ?? quick.reviewCount,
+        phone: detail ? parsePhone(detail.phoneAria, detail.phoneId) : undefined,
         website: detail?.website ?? undefined,
-        address: detail?.address ?? quick.address,
+        address: (detail?.addressAria ? detail.addressAria.replace(/^Address:\s*/i, "").trim() : undefined) ?? quick.address,
         hours: detail?.hours ?? undefined,
-        priceLevel: detail?.priceLevel ?? undefined,
-        photoCount: detail?.photoCount ?? undefined,
-        claimed: detail?.claimed,
+        claimed: detail ? !detail.claimPresent : undefined,
       };
       yield merged;
 
@@ -231,110 +227,81 @@ export class GoogleMapsSource implements ScrapeSource {
         const name = a.getAttribute("aria-label") ?? "";
         if (!name || seen.has(href)) continue;
         seen.add(href);
-        // Walk up to the card container to find the rating/info siblings.
+        // The card is the ancestor that is a direct child of the feed — scope the
+        // text to it so we read this business, not the feed toolbar.
         let card: HTMLElement = a;
-        for (let i = 0; i < 5 && card.parentElement; i++) {
-          card = card.parentElement;
-          if (/Nv2PK|bfdHYd|lI9IFe/.test(card.className)) break;
-        }
+        while (card.parentElement && card.parentElement !== feed) card = card.parentElement;
         const stars = card.querySelector('span[role="img"][aria-label]');
         out.push({
           href,
           name,
-          ratingLabel: stars?.getAttribute("aria-label") ?? "",
-          ratingText: card.querySelector(".MW4etd")?.textContent?.trim() ?? "",
-          reviewText: card.querySelector(".UY7F9")?.textContent?.trim() ?? "",
-          infoText: card.querySelector(".W4Efsd")?.textContent?.trim() ?? "",
+          starsAria: stars?.getAttribute("aria-label") ?? "",
+          cardText: (card.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 220),
         });
       }
       return out;
     });
   }
 
-  /** Turn phase-1 card data into the baseline lead (name/rating/reviews/category/address). */
+  /** Turn phase-1 card strings into a baseline lead. Reviews/category/address are
+   *  best-effort here — phase 2 overrides them authoritatively. */
   private parseCard(c: CardRaw): RawListing {
-    const placeId = placeIdFromUrl(c.href) ?? `name:${c.name.toLowerCase().replace(/\s+/g, "-")}`;
+    const placeId = bestPlaceId(c.href, c.name);
+    const rating = parseStars(c.starsAria);
 
-    // Rating: from the "4.7 stars 123 reviews" label, else the bare number span.
-    let rating: number | undefined;
-    let reviewCount: number | undefined;
-    const rl = c.ratingLabel.match(/([\d.]+)\s*stars?/i);
-    if (rl) rating = Number(rl[1]);
-    else if (c.ratingText) {
-      const n = Number(c.ratingText.replace(",", "."));
-      if (n >= 0 && n <= 5) rating = n;
-    }
-    if (rating !== undefined && (rating < 0 || rating > 5 || Number.isNaN(rating))) rating = undefined;
-    const revl = c.ratingLabel.match(/([\d,]+)\s*reviews?/i) ?? c.reviewText.match(/([\d,]+)/);
-    if (revl) reviewCount = Number(revl[1]!.replace(/,/g, "")) || undefined;
+    // Reviews: the "(1,234)" count printed right after the rating on the card.
+    const revM = c.cardText.match(/\(([\d,]+)\)/) ?? c.cardText.match(/([\d,]+)\s*reviews?/i);
+    const reviewCount = revM ? Number(revM[1]!.replace(/,/g, "")) || undefined : undefined;
 
-    // Category + address from the info line "Category · Address · Open …".
-    const parts = c.infoText
+    // Category/address from the "·"-separated info line. Only trust it when real
+    // separators exist — otherwise the concatenated card text isn't parseable and
+    // an empty field beats garbage (phase 2 / the search keyword cover category).
+    const parts = c.cardText
       .split(/·|⋅/)
       .map((p) => p.trim())
       .filter(Boolean);
-    const category = parts[0] && !/\d{2,}/.test(parts[0]) ? parts[0] : undefined;
-    const address = parts.find((p) => /\d/.test(p) && !/^\d+(\.\d+)?$/.test(p));
+    const hasSep = parts.length > 1;
+    const category = hasSep
+      ? parts.find((p) => p.length < 40 && /[a-z]/i.test(p) && !/\d{3,}/.test(p) && p !== c.name && !/review|star|\$|open|clos/i.test(p))
+      : undefined;
+    const address = hasSep ? parts.find((p) => p.length < 80 && /\d/.test(p) && /[a-z]/i.test(p) && !/review|star/i.test(p)) : undefined;
 
     return { placeId, businessName: c.name, rating, reviewCount, category, address };
   }
 
-  /** Wait for the place panel to actually render (its title) before we read it —
-   *  domcontentloaded fires before Maps hydrates the detail pane. */
+  /** Wait for the place panel's h1 to render — domcontentloaded fires before Maps
+   *  hydrates the detail pane. */
   private async waitForDetail(page: PwPage, signal: AbortSignal): Promise<void> {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
       if (signal.aborted) return;
-      if ((await page.locator(MAPS.detail.name).count()) > 0) return;
-      await sleep(400, signal);
+      const ready = await page.evaluate(() => !!document.querySelector("h1")?.textContent?.trim());
+      if (ready) return;
+      await sleep(450, signal);
     }
   }
 
-  /**
-   * Phase 2: read the full detail of the currently-open place page, in-page.
-   * This is the authoritative extraction — reviews, rating, hours, contact and
-   * category all come from here. Selectors are passed in from MAPS.detail so
-   * every brittle anchor stays in selectors.ts.
-   */
-  private extractDetail(page: PwPage): Promise<DetailRaw> {
+  /** Phase 2: read raw detail strings off stable anchors (h1, data-item-id, aria). */
+  private readDetail(page: PwPage): Promise<DetailRaw> {
     return page.evaluate((s) => {
       const q = (sel: string) => document.querySelector(sel);
-      const attr = (sel: string, a: string): string | null => q(sel)?.getAttribute(a) ?? null;
-      const txt = (sel: string): string | null => q(sel)?.textContent?.trim() ?? null;
-      const strip = (v: string | null, re: RegExp): string | null => (v ? v.replace(re, "").trim() || null : null);
+      const clip = (v: string | null | undefined): string | null => (v ? v.replace(/\s+/g, " ").trim() : null);
+      const main = (q('div[role="main"]') as Element | null) ?? document.body;
 
-      const name = txt(s.name);
-      const category = strip(txt(s.category), /\s*[·⋅].*$/);
-
-      // Rating (0–5), sanity-checked against the visible number / stars label.
-      let rating: number | null = null;
-      const rM = (txt(s.ratingValue) ?? attr(s.starsLabel, "aria-label") ?? "").match(/([\d.]+)/);
-      if (rM) {
-        const n = Number(rM[1]);
-        if (n >= 0 && n <= 5) rating = n;
+      // Rating + reviews from standalone aria-labels ("5.0 stars", "41 reviews").
+      let ratingAria: string | null = null;
+      let reviewsAria: string | null = null;
+      for (const el of Array.from(main.querySelectorAll("[aria-label]"))) {
+        const t = (el.getAttribute("aria-label") ?? "").trim();
+        if (!ratingAria && /^[\d.]+\s*stars?$/i.test(t)) ratingAria = t;
+        else if (!reviewsAria && /^\(?[\d,]+\)?\s*reviews?$/i.test(t)) reviewsAria = t;
+        if (ratingAria && reviewsAria) break;
       }
 
-      // Review count: the "N reviews" control, else the stars label, else the (N)
-      // printed right after the rating in the F7nice block.
-      let reviewCount: number | null = null;
-      const revRaw =
-        attr(s.reviewsCount, "aria-label") ?? txt(s.reviewsCount) ?? attr(s.starsLabel, "aria-label") ?? txt("div.F7nice");
-      const revM = revRaw?.match(/([\d,]+)\s*review/i) ?? revRaw?.match(/\(([\d,]+)\)/);
-      if (revM) {
-        const n = Number(revM[1]!.replace(/,/g, ""));
-        if (Number.isFinite(n)) reviewCount = n;
-      }
-
-      const phone =
-        strip(attr(s.phone, "aria-label"), /^Phone:\s*/i) ?? strip(attr(s.phone, "data-item-id"), /^phone:(tel:)?/i);
-      const website = attr(s.website, "href") ?? strip(attr(s.website, "aria-label"), /^Website:\s*/i);
-      const address = strip(attr(s.address, "aria-label"), /^Address:\s*/i);
-
-      // Hours: pick an aria-label that reads like hours (a day / AM / PM / Open /
-      // Closed plus a digit) — never the bare "Hours" header, a rating or a review.
+      // Hours: an aria-label that reads like hours (day/AM/PM/open/closed + a digit),
+      // never a rating, review, price or photo label.
       let hours: string | null = null;
-      const candidates: (string | null)[] = [attr(s.hours, "aria-label")];
-      for (const el of Array.from(document.querySelectorAll("[aria-label]"))) candidates.push(el.getAttribute("aria-label"));
-      for (const h of candidates) {
+      for (const el of Array.from(main.querySelectorAll("[aria-label]"))) {
+        const h = el.getAttribute("aria-label");
         if (
           h &&
           h.length < 220 &&
@@ -347,22 +314,19 @@ export class GoogleMapsSource implements ScrapeSource {
         }
       }
 
-      // Price level — the $/$$ marker if the listing exposes one.
-      const priceRaw = attr(s.priceLevel, "aria-label") ?? txt(s.priceLevel);
-      const priceLevel = priceRaw ? (priceRaw.match(/[$€£¥]{1,4}/)?.[0] ?? strip(priceRaw, /^Price:\s*/i)) : null;
-
-      // Photo count — only when the photos button carries a number (best-effort).
-      let photoCount: number | null = null;
-      const pM = attr(s.photoCountBtn, "aria-label")?.match(/([\d,]+)\s*photo/i);
-      if (pM) {
-        const n = Number(pM[1]!.replace(/,/g, ""));
-        if (Number.isFinite(n)) photoCount = n;
-      }
-
-      // "Claim this business" only appears on UNCLAIMED listings.
-      const claimed = !q(s.claimLink);
-
-      return { name, category, rating, reviewCount, phone, website, address, hours, priceLevel, photoCount, claimed };
+      const phoneEl = q(s.phone);
+      return {
+        url: location.href,
+        h1: clip(q(s.name)?.textContent),
+        phoneAria: phoneEl?.getAttribute("aria-label") ?? null,
+        phoneId: phoneEl?.getAttribute("data-item-id") ?? null,
+        website: q(s.website)?.getAttribute("href") ?? null,
+        addressAria: q(s.address)?.getAttribute("aria-label") ?? null,
+        ratingAria,
+        reviewsAria,
+        hours,
+        claimPresent: !!q(s.claimLink),
+      };
     }, MAPS.detail);
   }
 }
