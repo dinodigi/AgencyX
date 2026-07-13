@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { advanceStage } from "@/app/actions.ts";
 import { STAGE_ORDER } from "@/lib/format.ts";
@@ -14,39 +14,47 @@ const STAGE_COLORS: Record<string, string> = {
   client: "var(--color-stage-client)",
 };
 
-/** Pipeline visual + "advance to next stage" action for one lead.
+/** Pipeline visual + "advance to next stage" for one lead.
  *
- *  Uses an explicit handler (not a bare form action) so a failure is ALWAYS
- *  visible: a stage the workflow rejects surfaces its message, and an
- *  unreachable server action — e.g. a tab left open across a redeploy, whose
- *  action id no longer exists — surfaces a "refresh" hint instead of silently
- *  doing nothing. */
+ *  The stage is tracked in local state seeded from the server prop, so a
+ *  successful advance moves the pipeline IMMEDIATELY — we don't wait for a
+ *  re-fetch to re-render (that round-trip is why it looked like nothing
+ *  happened). router.refresh() still runs to sync the rest of the page, and a
+ *  changed server prop (manual reload or live-sync) re-seeds local state.
+ *
+ *  Failures are always visible: a rejected transition shows its message; an
+ *  unreachable action (e.g. a tab left open across a redeploy) says to refresh —
+ *  never a silent no-op. */
 export function StageActions({ leadId, stage }: { leadId: string; stage: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [current, setCurrent] = useState(stage);
 
-  const idx = STAGE_ORDER.indexOf(stage as (typeof STAGE_ORDER)[number]);
+  // Re-seed from the server if it changes underneath us (reload / live-sync).
+  useEffect(() => setCurrent(stage), [stage]);
+
+  const idx = STAGE_ORDER.indexOf(current as (typeof STAGE_ORDER)[number]);
   const next = idx >= 0 && idx < STAGE_ORDER.length - 1 ? STAGE_ORDER[idx + 1] : null;
 
   function advance() {
     if (!next) return;
+    const target = next;
     setMsg(null);
     start(async () => {
       try {
         const fd = new FormData();
         fd.append("leadId", leadId);
-        fd.append("toStage", next);
+        fd.append("toStage", target);
         const res = await advanceStage({ ok: false }, fd);
         if (res.ok) {
-          setMsg({ ok: true, text: `Moved to ${res.stage}.` });
-          router.refresh();
+          setCurrent(res.stage ?? target); // move the pipeline now
+          setMsg({ ok: true, text: `Moved to ${res.stage ?? target}.` });
+          router.refresh(); // sync the header badge + other sections
         } else {
           setMsg({ ok: false, text: res.error ?? "Couldn't move this lead." });
         }
       } catch {
-        // The action itself didn't run (network, or a stale action id after a
-        // redeploy). A reload re-binds the current build's actions.
         setMsg({ ok: false, text: "Couldn't reach the server — refresh the page and try again." });
       }
     });
@@ -58,15 +66,15 @@ export function StageActions({ leadId, stage }: { leadId: string; stage: string 
       <div className="flex items-center overflow-x-auto pb-1">
         {STAGE_ORDER.map((s, i) => {
           const done = i < idx;
-          const current = i === idx;
+          const isCurrent = i === idx;
           const color = STAGE_COLORS[s]!;
           return (
             <div key={s} className="flex items-center" style={{ flex: i < STAGE_ORDER.length - 1 ? "1 0 auto" : "0 0 auto" }}>
               <div className="flex min-w-16 flex-col items-center gap-1.5">
                 <span
-                  className={`grid h-6 w-6 place-items-center rounded-full border-2 text-[10px] font-bold ${current ? "pulse-dot" : ""}`}
+                  className={`grid h-6 w-6 place-items-center rounded-full border-2 text-[10px] font-bold ${isCurrent ? "pulse-dot" : ""}`}
                   style={
-                    done || current
+                    done || isCurrent
                       ? { background: color, borderColor: color, color: "#0b1220" }
                       : { borderColor: "var(--color-border)", color: "var(--color-muted)" }
                   }
@@ -75,7 +83,7 @@ export function StageActions({ leadId, stage }: { leadId: string; stage: string 
                 </span>
                 <span
                   className="text-[11px] font-medium capitalize whitespace-nowrap"
-                  style={{ color: current ? color : done ? "var(--color-ink)" : "var(--color-muted)" }}
+                  style={{ color: isCurrent ? color : done ? "var(--color-ink)" : "var(--color-muted)" }}
                 >
                   {s}
                 </span>
