@@ -195,7 +195,8 @@ export function createLeadEngineClient(options: AgentXClientOptions) {
       device?: string;
     }): Promise<SyncResult> {
       try {
-        const { id } = await ax.search_queries.create(row);
+        // queued_at drives FIFO claiming on the desktop ("Run next queued").
+        const { id } = await ax.search_queries.create({ queued_at: new Date().toISOString(), ...row });
         return { id, alreadySynced: false };
       } catch (err) {
         if (!isUniqueConflict(err)) throw err;

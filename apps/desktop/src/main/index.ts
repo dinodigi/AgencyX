@@ -256,10 +256,12 @@ async function claimNextRun(): Promise<RunState> {
     | { id: string; keyword: string; zip: string; max_leads?: number; target_website?: string; min_reviews?: number; max_reviews?: number }
     | undefined;
   try {
+    // FIFO: oldest queued first — so "Run next queued" runs what was queued first,
+    // not whatever sorts first alphabetically.
     const rows = await client.ax.search_queries.list({
       filter: { status: "pending" },
       limit: 1,
-      sort: { field: "keyword", dir: "asc" },
+      sort: { field: "queued_at", dir: "asc" },
     });
     pending = rows[0];
   } catch (err) {
@@ -274,8 +276,10 @@ async function claimNextRun(): Promise<RunState> {
   runAbort = new AbortController();
   setRunState({ running: true, keyword: pending.keyword, zip: pending.zip, captured: 0, lastOutcome: undefined });
 
+  // Queued searches ALWAYS scrape the real Google source — the queue is the
+  // production path. (Dry-run/mock is an ad-hoc "Start run" option only.)
   const filter = toScrapeFilter(pending);
-  void makeRunner(false, pending.max_leads)
+  void makeRunner(true, pending.max_leads)
     .runQuery(pending.id, pending.keyword, pending.zip, currentContext(state.orgId), runAbort.signal, filter)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
@@ -302,7 +306,7 @@ async function listQueue(): Promise<QueueItem[]> {
   const client = auth.getClient();
   if (!client) return [];
   try {
-    const rows = await client.ax.search_queries.list({ limit: 200, sort: { field: "last_scraped_at", dir: "desc" } });
+    const rows = await client.ax.search_queries.list({ limit: 200, sort: { field: "queued_at", dir: "desc" } });
     const items: QueueItem[] = rows.map((r) => ({
       id: r.id,
       keyword: r.keyword,

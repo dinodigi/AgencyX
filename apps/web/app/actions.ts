@@ -114,7 +114,10 @@ export async function createSearch(_prev: SearchResult, formData: FormData): Pro
       // unless a device is scraping it right now.
       const current = await ctx.ax.search_queries.get(res.id);
       const patch: Record<string, unknown> = { ...options };
-      if (current.status !== "running") patch.status = "pending";
+      if (current.status !== "running") {
+        patch.status = "pending";
+        patch.queued_at = new Date().toISOString(); // re-queued now — back of the FIFO line
+      }
       await ctx.client.update("search_queries", res.id, patch);
     }
   } catch (e) {

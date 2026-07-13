@@ -662,6 +662,12 @@
           "publicRead": true
         },
         {
+          "name": "queued_at",
+          "type": "date",
+          "label": "Queued At",
+          "publicRead": true
+        },
+        {
           "name": "last_scraped_at",
           "type": "date",
           "label": "Last Scraped At",

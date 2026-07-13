@@ -238,6 +238,7 @@ export interface SearchQueries {
   keyword: string;
   zip: string;
   status?: "pending" | "running" | "completed" | "failed";
+  queued_at?: string;
   last_scraped_at?: string;
   result_count?: number;
   max_leads?: number;
@@ -255,6 +256,7 @@ export interface SearchQueriesListOpts {
     keyword?: string;
     zip?: string;
     status?: "pending" | "running" | "completed" | "failed";
+    queued_at?: string;
     last_scraped_at?: string;
     result_count?: number;
     max_leads?: number;
@@ -265,7 +267,7 @@ export interface SearchQueriesListOpts {
     agency?: string;
     device?: string;
   };
-  sort?: { field: "dedup_key" | "keyword" | "zip" | "status" | "last_scraped_at" | "result_count" | "max_leads" | "target_website" | "min_reviews" | "max_reviews" | "user" | "agency" | "device"; dir: "asc" | "desc" };
+  sort?: { field: "dedup_key" | "keyword" | "zip" | "status" | "queued_at" | "last_scraped_at" | "result_count" | "max_leads" | "target_website" | "min_reviews" | "max_reviews" | "user" | "agency" | "device"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -276,6 +278,7 @@ export interface SearchQueriesCreate {
   keyword: string;
   zip: string;
   status?: "pending" | "running" | "completed" | "failed";
+  queued_at?: string;
   last_scraped_at?: string;
   result_count?: number;
   max_leads?: number;
