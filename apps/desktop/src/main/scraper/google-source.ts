@@ -31,7 +31,7 @@ interface PwPage {
   goto(url: string, opts?: { waitUntil?: string; timeout?: number }): Promise<unknown>;
   locator(selector: string): PwLocator;
   url(): string;
-  evaluate<R>(fn: () => R): Promise<R>;
+  evaluate<R, A = undefined>(fn: (arg: A) => R, arg?: A): Promise<R>;
 }
 interface PwContext {
   newPage(): Promise<PwPage>;
@@ -51,13 +51,22 @@ interface CardRaw {
   infoText: string; // "Plumber · 123 Main St · Open"
 }
 
-/** Detail fields harvested from a place page in phase 2. */
+/**
+ * Detail fields harvested from a place page in phase 2 — the AUTHORITATIVE
+ * source. The map feed only gives names; everything worth having (reviews,
+ * rating, hours, contact, category) is read here, from the open listing.
+ */
 interface DetailRaw {
+  name: string | null;
+  category: string | null;
+  rating: number | null;
+  reviewCount: number | null;
   phone: string | null;
   website: string | null;
   address: string | null;
   hours: string | null;
   priceLevel: string | null;
+  photoCount: number | null;
   claimed: boolean;
 }
 
@@ -127,8 +136,10 @@ export class GoogleMapsSource implements ScrapeSource {
     const sample = targets[0]!;
     opts.onLog("info", `phase 1 — ${targets.length} businesses in the map view. sample: "${sample.name}" | rating "${sample.ratingLabel || sample.ratingText}" | info "${sample.infoText.slice(0, 60)}"`);
 
-    // ── Phase 2: open each listing for detail ──────────────────────────────
-    opts.onLog("info", "phase 2 — opening each listing for phone / website / hours…");
+    // ── Phase 2: open each listing and read the real data ──────────────────
+    // The listing — not the map card — is where the focus is. We read reviews,
+    // rating, hours, contact and category HERE; the card is only a fallback.
+    opts.onLog("info", "phase 2 — opening each listing to read reviews / rating / hours / contact…");
     let done = 0;
     for (const c of targets) {
       if (opts.signal.aborted) return;
@@ -139,24 +150,37 @@ export class GoogleMapsSource implements ScrapeSource {
         await page.goto(c.href, { waitUntil: "domcontentloaded", timeout: 20000 });
         await actionDelay(opts.signal);
         await this.assertNotBlocked(page);
+        await this.waitForDetail(page, opts.signal); // let the place panel render before reading
         detail = await this.extractDetail(page);
       } catch (err) {
         if (err instanceof ScrapeBlockedError) throw err;
-        opts.onLog("warn", `"${quick.businessName}": detail failed (${err instanceof Error ? err.message : String(err)}) — preview only`);
+        opts.onLog("warn", `"${quick.businessName}": detail failed (${err instanceof Error ? err.message : String(err)}) — feed preview only`);
       }
 
-      yield {
-        ...quick,
+      // Listing is authoritative; fall back to the feed card only per-field when
+      // detail is missing (e.g. the place panel failed to load).
+      const merged: RawListing = {
+        placeId: quick.placeId,
+        businessName: detail?.name || quick.businessName,
+        category: detail?.category ?? quick.category,
+        rating: detail?.rating ?? quick.rating,
+        reviewCount: detail?.reviewCount ?? quick.reviewCount,
         phone: detail?.phone ?? undefined,
         website: detail?.website ?? undefined,
         address: detail?.address ?? quick.address,
         hours: detail?.hours ?? undefined,
         priceLevel: detail?.priceLevel ?? undefined,
+        photoCount: detail?.photoCount ?? undefined,
         claimed: detail?.claimed,
-      } satisfies RawListing;
+      };
+      yield merged;
 
       done++;
-      opts.onLog("info", `phase 2 — ${done}/${targets.length}: ${quick.businessName}`);
+      const stars = merged.rating != null ? `${merged.rating}★` : "?★";
+      opts.onLog(
+        "info",
+        `phase 2 — ${done}/${targets.length}: ${merged.businessName} · ${merged.category ?? "—"} · ${stars} (${merged.reviewCount ?? 0} rev) · ${merged.phone ?? "no phone"} · ${merged.website ? "site" : "no site"} · ${merged.hours ? "hours✓" : "no hours"}`,
+      );
       await betweenListingsDelay(opts.signal);
     }
     opts.onLog("info", `done — ${done} businesses captured`);
@@ -243,26 +267,90 @@ export class GoogleMapsSource implements ScrapeSource {
     return { placeId, businessName: c.name, rating, reviewCount, category, address };
   }
 
-  /** Phase 2: read the detail panel of the currently-open place page, in-page. */
+  /** Wait for the place panel to actually render (its title) before we read it —
+   *  domcontentloaded fires before Maps hydrates the detail pane. */
+  private async waitForDetail(page: PwPage, signal: AbortSignal): Promise<void> {
+    for (let i = 0; i < 10; i++) {
+      if (signal.aborted) return;
+      if ((await page.locator(MAPS.detail.name).count()) > 0) return;
+      await sleep(400, signal);
+    }
+  }
+
+  /**
+   * Phase 2: read the full detail of the currently-open place page, in-page.
+   * This is the authoritative extraction — reviews, rating, hours, contact and
+   * category all come from here. Selectors are passed in from MAPS.detail so
+   * every brittle anchor stays in selectors.ts.
+   */
   private extractDetail(page: PwPage): Promise<DetailRaw> {
-    return page.evaluate(() => {
-      const attr = (sel: string, a: string): string | null => document.querySelector(sel)?.getAttribute(a) ?? null;
-      const clean = (v: string | null, re: RegExp): string | null => (v ? v.replace(re, "").trim() || null : null);
+    return page.evaluate((s) => {
+      const q = (sel: string) => document.querySelector(sel);
+      const attr = (sel: string, a: string): string | null => q(sel)?.getAttribute(a) ?? null;
+      const txt = (sel: string): string | null => q(sel)?.textContent?.trim() ?? null;
+      const strip = (v: string | null, re: RegExp): string | null => (v ? v.replace(re, "").trim() || null : null);
+
+      const name = txt(s.name);
+      const category = strip(txt(s.category), /\s*[·⋅].*$/);
+
+      // Rating (0–5), sanity-checked against the visible number / stars label.
+      let rating: number | null = null;
+      const rM = (txt(s.ratingValue) ?? attr(s.starsLabel, "aria-label") ?? "").match(/([\d.]+)/);
+      if (rM) {
+        const n = Number(rM[1]);
+        if (n >= 0 && n <= 5) rating = n;
+      }
+
+      // Review count: the "N reviews" control, else the stars label, else the (N)
+      // printed right after the rating in the F7nice block.
+      let reviewCount: number | null = null;
+      const revRaw =
+        attr(s.reviewsCount, "aria-label") ?? txt(s.reviewsCount) ?? attr(s.starsLabel, "aria-label") ?? txt("div.F7nice");
+      const revM = revRaw?.match(/([\d,]+)\s*review/i) ?? revRaw?.match(/\(([\d,]+)\)/);
+      if (revM) {
+        const n = Number(revM[1]!.replace(/,/g, ""));
+        if (Number.isFinite(n)) reviewCount = n;
+      }
 
       const phone =
-        clean(attr('button[data-item-id^="phone:tel:"]', "aria-label"), /^Phone:\s*/i) ??
-        clean(attr('button[data-item-id^="phone:tel:"]', "data-item-id"), /^phone:tel:/i);
-      const website = attr('a[data-item-id="authority"]', "href");
-      const address = clean(attr('button[data-item-id="address"]', "aria-label"), /^Address:\s*/i);
-      const hours =
-        attr('[jsaction*="openhours"] [aria-label]', "aria-label") ??
-        document.querySelector(".t39EBf")?.getAttribute("aria-label") ??
-        document.querySelector(".t39EBf")?.textContent?.trim() ??
-        null;
-      const priceLevel = clean(attr('[aria-label*="Price:" i]', "aria-label"), /^Price:\s*/i);
-      const claimed = !document.querySelector('a[href*="/maps/business"], button[aria-label*="Claim this business" i]');
+        strip(attr(s.phone, "aria-label"), /^Phone:\s*/i) ?? strip(attr(s.phone, "data-item-id"), /^phone:(tel:)?/i);
+      const website = attr(s.website, "href") ?? strip(attr(s.website, "aria-label"), /^Website:\s*/i);
+      const address = strip(attr(s.address, "aria-label"), /^Address:\s*/i);
 
-      return { phone, website, address, hours, priceLevel, claimed };
-    });
+      // Hours: pick an aria-label that reads like hours (a day / AM / PM / Open /
+      // Closed plus a digit) — never the bare "Hours" header, a rating or a review.
+      let hours: string | null = null;
+      const candidates: (string | null)[] = [attr(s.hours, "aria-label")];
+      for (const el of Array.from(document.querySelectorAll("[aria-label]"))) candidates.push(el.getAttribute("aria-label"));
+      for (const h of candidates) {
+        if (
+          h &&
+          h.length < 220 &&
+          /\d/.test(h) &&
+          /(open|clos|a\.?m\.?\b|p\.?m\.?\b|24 hours|24\/7)/i.test(h) &&
+          !/review|star|rating|photo|price/i.test(h)
+        ) {
+          hours = h.trim();
+          break;
+        }
+      }
+
+      // Price level — the $/$$ marker if the listing exposes one.
+      const priceRaw = attr(s.priceLevel, "aria-label") ?? txt(s.priceLevel);
+      const priceLevel = priceRaw ? (priceRaw.match(/[$€£¥]{1,4}/)?.[0] ?? strip(priceRaw, /^Price:\s*/i)) : null;
+
+      // Photo count — only when the photos button carries a number (best-effort).
+      let photoCount: number | null = null;
+      const pM = attr(s.photoCountBtn, "aria-label")?.match(/([\d,]+)\s*photo/i);
+      if (pM) {
+        const n = Number(pM[1]!.replace(/,/g, ""));
+        if (Number.isFinite(n)) photoCount = n;
+      }
+
+      // "Claim this business" only appears on UNCLAIMED listings.
+      const claimed = !q(s.claimLink);
+
+      return { name, category, rating, reviewCount, phone, website, address, hours, priceLevel, photoCount, claimed };
+    }, MAPS.detail);
   }
 }
