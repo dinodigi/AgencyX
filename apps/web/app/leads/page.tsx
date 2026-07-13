@@ -6,6 +6,7 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, EmptyState, NotConfigured } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { LeadFilters } from "@/components/LeadFilters.tsx";
+import { LiveRefresh } from "@/components/LiveRefresh.tsx";
 import { LeadsTable } from "@/components/LeadsTable.tsx";
 
 export const dynamic = "force-dynamic";
@@ -84,6 +85,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
+      <LiveRefresh watch={["leads"]} />
       <PageHeader
         title="Leads"
         subtitle={rows.length === 0 ? "No leads" : `Showing ${rangeStart}–${rangeEnd}`}

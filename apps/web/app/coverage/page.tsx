@@ -3,6 +3,7 @@ import { withClient, isConfigured } from "@/lib/agentx.ts";
 import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, Card, EmptyState, NotConfigured, StatusBadge } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
+import { LiveRefresh } from "@/components/LiveRefresh.tsx";
 import { fmtRelative } from "@/lib/format.ts";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export default async function CoveragePage() {
 
   return (
     <div>
+      <LiveRefresh watch={["search_queries"]} />
       <PageHeader title="Coverage" subtitle={`${rows.length} keyword × ZIP units`} />
       <div className="p-8">
         {error ? (

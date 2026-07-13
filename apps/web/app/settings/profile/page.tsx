@@ -3,6 +3,7 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, NotConfigured, EmptyState } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { ProfileForm } from "@/components/ProfileForm.tsx";
+import { LiveRefresh } from "@/components/LiveRefresh.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export default async function ProfilePage() {
 
   return (
     <div>
+      <LiveRefresh watch={["agencies"]} />
       <PageHeader title="Agency profile" subtitle="Your company identity — brands every proposal you send." />
       <div className="p-8">
         {error ? <EmptyState title="Couldn't load profile" hint={error} /> : <ProfileForm initial={initial} initialLogoPreview={logoPreview} />}

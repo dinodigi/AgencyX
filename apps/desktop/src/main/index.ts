@@ -42,6 +42,7 @@ let registration: Registration | null = null;
 let registeredOrgId: string | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 let autorun: AutoRunController | null = null;
+let stopChangeFeed: (() => void) | null = null;
 
 const HEARTBEAT_MS = 5 * 60 * 1000; // coarse — presence, not real-time (limits undocumented)
 const WRITE_PACE_MS = 200; // gap between delivery-API writes (rate-limit courtesy)
@@ -143,12 +144,15 @@ async function onAuthChanged(state: AuthState): Promise<void> {
   if (state.status === "signed-in" && state.orgId && state.email) {
     // Register on first sign-in or when the active org changed.
     if (state.orgId !== registeredOrgId) {
+      stopFeed();
       registration = null;
       await doRegister(state.orgId, state.email);
     }
+    startChangeFeed(); // idempotent — no-op if already streaming (fires on token refresh too)
   } else {
     registration = null;
     registeredOrgId = null;
+    stopFeed();
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     heartbeatTimer = null;
   }
@@ -172,6 +176,30 @@ async function doRegister(orgId: string, email: string): Promise<void> {
   } catch (err) {
     log("error", `device registration failed: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/**
+ * Live sync (SSE). Stream AgentX changes so the queue reflects searches created
+ * on the web — and status/result changes from any device — without a manual
+ * Refresh. The generated client handles reconnect + poll fallback; we just
+ * re-list the queue when a search_queries row changes. A persistent process can
+ * hold this stream cheaply, so the desktop gets push (the web polls instead).
+ */
+function startChangeFeed(): void {
+  const client = auth.getClient();
+  if (!client || stopChangeFeed) return;
+  stopChangeFeed = client.ax.changes.stream(
+    (c) => {
+      if (c.collection === "search_queries") void listQueue();
+    },
+    { collections: ["search_queries"] },
+  );
+  log("info", "live sync connected");
+}
+
+function stopFeed(): void {
+  stopChangeFeed?.();
+  stopChangeFeed = null;
 }
 
 async function beat(): Promise<void> {

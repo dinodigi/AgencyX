@@ -6,6 +6,7 @@ import { PageHeader, Card, EmptyState, NotConfigured, StageBadge } from "@/compo
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { StageActions } from "@/components/StageActions.tsx";
 import { DeleteLeadButton } from "@/components/DeleteLeadButton.tsx";
+import { LiveRefresh } from "@/components/LiveRefresh.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
+      <LiveRefresh watch={["leads"]} />
       <PageHeader
         title={lead.business_name}
         subtitle={lead.category ?? undefined}

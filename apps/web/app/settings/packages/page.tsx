@@ -3,6 +3,7 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, NotConfigured, EmptyState } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { Catalog } from "@/components/catalog/Catalog.tsx";
+import { LiveRefresh } from "@/components/LiveRefresh.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function PackagesPage() {
 
   return (
     <div>
+      <LiveRefresh watch={["services", "microservices", "packages"]} />
       <PageHeader title="Services & packages" subtitle="Build the offers you sell — reused in every proposal." />
       {error ? (
         <div className="p-8">
