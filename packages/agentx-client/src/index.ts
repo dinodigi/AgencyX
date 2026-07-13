@@ -109,6 +109,32 @@ export function createLeadEngineClient(options: AgentXClientOptions) {
       return raw<void>("DELETE", `/${collection}/${encodeURIComponent(id)}`);
     },
 
+    /**
+     * Upload a file to a collection's asset field via the delivery uploads
+     * endpoint (multipart) — same write gate as a create, so the delivery token
+     * + the end-user JWT is all it needs (no full-trust MCP token). Returns the
+     * asset {id,url} to store in the asset field. 10 MB; image/pdf/text/csv/json.
+     */
+    async uploadAsset(
+      collection: CollectionName,
+      file: Blob,
+      filename: string,
+    ): Promise<{ id: string; url: string; contentType?: string }> {
+      const form = new FormData();
+      form.append("file", file, filename);
+      // Multipart: DON'T set content-type — fetch adds the boundary itself.
+      const h: Record<string, string> = { authorization: "Bearer " + options.token };
+      if (userToken) h["x-user-token"] = userToken;
+      const res = await fetch(`${baseUrl}/${encodeURIComponent(collection)}/uploads`, { method: "POST", headers: h, body: form });
+      const json = (await res.json().catch(() => null)) as
+        | { id?: string; url?: string; contentType?: string; error?: string; code?: string }
+        | null;
+      if (!res.ok || !json?.id || !json?.url) {
+        throw new AgentXError(res.status, json?.error ?? "upload failed (HTTP " + res.status + ")", json?.code);
+      }
+      return { id: json.id, url: json.url, contentType: json.contentType };
+    },
+
     /** Full-text search over public searchable fields (rank-ordered, rate-limited). */
     async search<T>(collection: CollectionName, q: string, opts: { limit?: number; offset?: number } = {}): Promise<T[]> {
       const res = await raw<{ data: T[] }>("GET", `/${collection}`, { q, limit: opts.limit, offset: opts.offset });

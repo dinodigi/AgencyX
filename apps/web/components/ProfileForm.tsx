@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveAgencyProfile, type AgencyProfileInput } from "@/app/settings/actions.ts";
+import { saveAgencyProfile, uploadLogo, type AgencyProfileInput } from "@/app/settings/actions.ts";
 
 type Values = AgencyProfileInput;
 
 const EMPTY: Values = {
   name: "",
+  logo: "",
   logo_url: "",
   tagline: "",
   website: "",
@@ -27,16 +28,44 @@ const inp =
  * proposal-header preview themed by the brand color, so the operator sees the
  * branding a prospect will see.
  */
-export function ProfileForm({ initial }: { initial: Partial<Values> | null }) {
+export function ProfileForm({ initial, initialLogoPreview }: { initial: Partial<Values> | null; initialLogoPreview?: string }) {
   const router = useRouter();
   const [v, setV] = useState<Values>({ ...EMPTY, ...initial });
+  const [logoPreview, setLogoPreview] = useState<string>(initialLogoPreview ?? "");
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof Values>(k: K, val: Values[K]) => {
     setV((p) => ({ ...p, [k]: val }));
     setMsg(null);
   };
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploading(true);
+      setMsg(null);
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await uploadLogo(fd);
+      setUploading(false);
+      if (res.ok && res.id && res.url) {
+        setV((p) => ({ ...p, logo: res.id }));
+        setLogoPreview(res.url);
+      } else {
+        setMsg({ ok: false, text: res.error ?? "Upload failed." });
+      }
+    }
+    if (fileRef.current) fileRef.current.value = ""; // allow re-selecting the same file
+  }
+
+  function clearLogo() {
+    setV((p) => ({ ...p, logo: "" }));
+    setLogoPreview("");
+    setMsg(null);
+  }
 
   async function save() {
     setBusy(true);
@@ -66,7 +95,28 @@ export function ProfileForm({ initial }: { initial: Partial<Values> | null }) {
         <Field label="Company name">
           <input className={inp} value={v.name} onChange={(e) => set("name", e.target.value)} placeholder="Acme Digital" />
         </Field>
-        <Field label="Logo URL" hint="Paste a link to your logo image. File upload comes with your R2 keys.">
+        <Field label="Logo" hint="Upload an image (≤10 MB) — stored in your R2 bucket via AgentX — or paste a URL below.">
+          <div className="flex items-center gap-3">
+            <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)]">
+              {logoPreview || v.logo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoPreview || v.logo_url} alt="" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs text-[var(--color-muted)]">{initials}</span>
+              )}
+            </div>
+            <label className="cursor-pointer rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm hover:bg-[var(--color-surface-2)]">
+              {uploading ? "Uploading…" : "Upload logo"}
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" disabled={uploading} onChange={onFile} />
+            </label>
+            {(logoPreview || v.logo) && (
+              <button onClick={clearLogo} className="text-sm text-[var(--color-muted)] hover:text-red-400">
+                Remove
+              </button>
+            )}
+          </div>
+        </Field>
+        <Field label="…or logo URL" hint="An externally hosted image, if you prefer not to upload.">
           <input className={inp} value={v.logo_url ?? ""} onChange={(e) => set("logo_url", e.target.value)} placeholder="https://…/logo.png" />
         </Field>
         <Field label="Tagline">
@@ -115,9 +165,9 @@ export function ProfileForm({ initial }: { initial: Partial<Values> | null }) {
         <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]">
           <div className="p-5" style={{ background: `linear-gradient(135deg, ${brand}, ${accent})` }}>
             <div className="flex items-center gap-3">
-              {v.logo_url ? (
+              {logoPreview || v.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={v.logo_url} alt="" className="h-11 w-11 rounded-xl object-cover" />
+                <img src={logoPreview || v.logo_url} alt="" className="h-11 w-11 rounded-xl bg-white/10 object-contain" />
               ) : (
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/20 text-sm font-bold text-white">{initials}</div>
               )}

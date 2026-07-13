@@ -14,13 +14,16 @@ export default async function ProfilePage() {
   if (!ctx) return <AuthGate status="signed-out" />;
 
   let initial: Record<string, string | undefined> | null = null;
+  let logoPreview: string | undefined;
   let error: string | null = null;
   try {
     const rows = await ctx.ax.agencies.list({ limit: 1 });
     const a = rows[0];
     if (a) {
+      logoPreview = a.logo?.url;
       initial = {
         name: a.name,
+        logo: a.logo?.id,
         logo_url: a.logo_url,
         tagline: a.tagline,
         website: a.website,
@@ -40,7 +43,7 @@ export default async function ProfilePage() {
     <div>
       <PageHeader title="Agency profile" subtitle="Your company identity — brands every proposal you send." />
       <div className="p-8">
-        {error ? <EmptyState title="Couldn't load profile" hint={error} /> : <ProfileForm initial={initial} />}
+        {error ? <EmptyState title="Couldn't load profile" hint={error} /> : <ProfileForm initial={initial} initialLogoPreview={logoPreview} />}
       </div>
     </div>
   );

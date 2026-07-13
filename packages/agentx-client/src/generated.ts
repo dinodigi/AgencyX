@@ -50,6 +50,7 @@ export interface Agencies {
   name: string;
   tier?: "starter" | "pro" | "enterprise";
   billing_email?: string;
+  logo?: { id: string; url: string; contentType: string };
   logo_url?: string;
   tagline?: string;
   website?: string;
@@ -66,6 +67,7 @@ export interface AgenciesListOpts {
     name?: string;
     tier?: "starter" | "pro" | "enterprise";
     billing_email?: string;
+    logo?: string;
     logo_url?: string;
     tagline?: string;
     website?: string;
@@ -75,7 +77,7 @@ export interface AgenciesListOpts {
     brand_color?: string;
     accent_color?: string;
   };
-  sort?: { field: "name" | "tier" | "billing_email" | "logo_url" | "tagline" | "website" | "phone" | "email" | "address" | "brand_color" | "accent_color" | "proposal_footer"; dir: "asc" | "desc" };
+  sort?: { field: "name" | "tier" | "billing_email" | "logo" | "logo_url" | "tagline" | "website" | "phone" | "email" | "address" | "brand_color" | "accent_color" | "proposal_footer"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -86,6 +88,7 @@ export interface AgenciesCreate {
   tier?: "starter" | "pro" | "enterprise";
   billing_email?: string;
   qualification_key_ref?: string;
+  logo?: string;
   logo_url?: string;
   tagline?: string;
   website?: string;
@@ -615,6 +618,19 @@ export function createClient(options: AgentXClientOptions) {
       },
       async create(data: AgenciesCreate): Promise<{ id: string }> {
         return request<{ id: string }>("POST", "/agencies", undefined, data);
+      },
+      /** Upload a file, then reference the returned id in an asset field. */
+      async upload(file: Blob, filename = "upload"): Promise<{ id: string; url: string }> {
+        const fd = new FormData();
+        fd.append("file", file, filename);
+        const headers: Record<string, string> = { authorization: "Bearer " + options.token };
+        if (userToken) headers["x-user-token"] = userToken;
+        const res = await fetch(baseUrl + "/agencies/uploads", { method: "POST", headers, body: fd });
+        const json = (await res.json().catch(() => null)) as
+          | { id?: string; url?: string; error?: string; code?: string }
+          | null;
+        if (!res.ok) throw new AgentXError(res.status, json?.error ?? "HTTP " + res.status, json?.code);
+        return json as { id: string; url: string };
       },
     },
     devices: { // requires setUserToken() for non-public access

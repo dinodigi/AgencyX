@@ -82,6 +82,7 @@
           "type": "text",
           "label": "Qualification Key Ref"
         },
+        { "name": "logo", "type": "asset", "label": "Logo", "publicRead": true },
         { "name": "logo_url", "type": "text", "label": "Logo URL", "publicRead": true },
         { "name": "tagline", "type": "text", "label": "Tagline", "publicRead": true },
         { "name": "website", "type": "text", "label": "Website", "publicRead": true },

@@ -32,6 +32,8 @@ export interface ActionResult {
 
 export interface AgencyProfileInput {
   name: string;
+  /** Asset id from uploadLogo (empty string clears it). */
+  logo?: string;
   logo_url?: string;
   tagline?: string;
   website?: string;
@@ -61,6 +63,8 @@ export async function saveAgencyProfile(input: AgencyProfileInput): Promise<Acti
     accent_color: input.accent_color?.trim() || undefined,
     proposal_footer: input.proposal_footer?.trim() || undefined,
   };
+  // Asset: undefined = leave as-is, "" = clear (null), id = set.
+  if (input.logo !== undefined) patch.logo = input.logo || null;
 
   try {
     const rows = await withBackoff(() => ctx.ax.agencies.list({ limit: 1 }));
@@ -72,6 +76,25 @@ export async function saveAgencyProfile(input: AgencyProfileInput): Promise<Acti
   }
   revalidatePath("/settings/profile");
   return { ok: true };
+}
+
+/**
+ * Upload a logo to R2 through AgentX's delivery uploads endpoint (multipart) and
+ * return the asset {id,url}. Runs server-side so the delivery token stays off the
+ * client; the user's JWT (from withClient) satisfies the write gate.
+ */
+export async function uploadLogo(formData: FormData): Promise<{ ok: boolean; id?: string; url?: string; error?: string }> {
+  const ctx = await withClient();
+  if (!ctx) return { ok: false, error: "Not signed in." };
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose an image file." };
+  if (file.size > 10 * 1024 * 1024) return { ok: false, error: "Logo must be under 10 MB." };
+  try {
+    const res = await withBackoff(() => ctx.client.uploadAsset("agencies", file, file.name));
+    return { ok: true, id: res.id, url: res.url };
+  } catch (e) {
+    return { ok: false, error: errMsg(e) };
+  }
 }
 
 // ── Services + microservice library (shared shape) ──────────────────────────
