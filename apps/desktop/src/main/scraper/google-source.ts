@@ -22,7 +22,7 @@ import type { RawListing } from "@dinosales/types";
 import type { ScrapeQuery, ScrapeSource, ScrapeSourceOptions } from "./types.ts";
 import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
 import { actionDelay, betweenListingsDelay, scrollPause, randomUserAgent, randomViewport, sleep } from "./human.ts";
-import { MAPS, bestPlaceId, extractPlaceIds, parseStars, parseReviews, parsePhone } from "./selectors.ts";
+import { MAPS, bestPlaceId, extractPlaceIds, parseStars, parseReviews, parsePhone, cleanWebsite } from "./selectors.ts";
 
 // Minimal Playwright surface we depend on (declared locally so this file
 // typechecks without the package installed; the runtime objects are real).
@@ -162,7 +162,8 @@ export class GoogleMapsSource implements ScrapeSource {
         if (/\/sorry\//.test(page.url())) throw new ScrapeBlockedError("Google /sorry block during detail");
         await this.assertNotBlocked(page);
         await this.waitForDetail(page, opts.signal);
-        detail = await this.readDetail(page);
+        detail = await this.readDetail(page); // core fields from the clean, un-clicked panel
+        detail.hours = await this.readFullHours(page, opts.signal); // then expand-if-needed + read hours
       } catch (err) {
         if (err instanceof ScrapeBlockedError) throw err;
         opts.onLog("warn", `"${quick.businessName}": detail failed (${err instanceof Error ? err.message : String(err)}) — feed data only`);
@@ -176,7 +177,7 @@ export class GoogleMapsSource implements ScrapeSource {
         rating: (detail ? parseStars(detail.ratingAria) : undefined) ?? quick.rating,
         reviewCount: (detail ? parseReviews(detail.reviewsAria) : undefined) ?? quick.reviewCount,
         phone: detail ? parsePhone(detail.phoneAria, detail.phoneId) : undefined,
-        website: detail?.website ?? undefined,
+        website: detail ? cleanWebsite(detail.website) : undefined,
         address: (detail?.addressAria ? detail.addressAria.replace(/^Address:\s*/i, "").trim() : undefined) ?? quick.address,
         hours: detail?.hours ?? undefined,
         claimed: detail ? !detail.claimPresent : undefined,
@@ -280,6 +281,28 @@ export class GoogleMapsSource implements ScrapeSource {
     }
   }
 
+  /** Expand the weekly-hours accordion so the full schedule is in the DOM. Some
+   *  listings only render the 7 day rows after "Show open hours for the week" is
+   *  clicked. Best-effort and non-fatal — hours falls back to the summary line. */
+  private async expandHours(page: PwPage, signal: AbortSignal): Promise<void> {
+    try {
+      const clicked = await page.evaluate(() => {
+        const main = (document.querySelector('div[role="main"]') as Element | null) ?? document.body;
+        const btn = Array.from(main.querySelectorAll("[aria-label]")).find((e) =>
+          /show open hours for the week|see more hours|hours for the week/i.test(e.getAttribute("aria-label") ?? ""),
+        ) as HTMLElement | undefined;
+        if (btn) {
+          btn.click();
+          return true;
+        }
+        return false;
+      });
+      if (clicked) await sleep(700, signal);
+    } catch {
+      /* non-fatal — the summary fallback still yields something */
+    }
+  }
+
   /** Phase 2: read raw detail strings off stable anchors (h1, data-item-id, aria). */
   private readDetail(page: PwPage): Promise<DetailRaw> {
     return page.evaluate((s) => {
@@ -297,23 +320,6 @@ export class GoogleMapsSource implements ScrapeSource {
         if (ratingAria && reviewsAria) break;
       }
 
-      // Hours: an aria-label that reads like hours (day/AM/PM/open/closed + a digit),
-      // never a rating, review, price or photo label.
-      let hours: string | null = null;
-      for (const el of Array.from(main.querySelectorAll("[aria-label]"))) {
-        const h = el.getAttribute("aria-label");
-        if (
-          h &&
-          h.length < 220 &&
-          /\d/.test(h) &&
-          /(open|clos|a\.?m\.?\b|p\.?m\.?\b|24 hours|24\/7)/i.test(h) &&
-          !/review|star|rating|photo|price/i.test(h)
-        ) {
-          hours = h.trim();
-          break;
-        }
-      }
-
       const phoneEl = q(s.phone);
       return {
         url: location.href,
@@ -324,9 +330,62 @@ export class GoogleMapsSource implements ScrapeSource {
         addressAria: q(s.address)?.getAttribute("aria-label") ?? null,
         ratingAria,
         reviewsAria,
-        hours,
+        hours: null, // filled by readFullHours after the core fields are safely read
         claimPresent: !!q(s.claimLink),
       };
     }, MAPS.detail);
+  }
+
+  /**
+   * Read the FULL weekly hours as a "Day: hours" block. Runs AFTER the core
+   * fields (expanding the hours accordion can swap the panel to an "Hours"
+   * sub-view, which would clobber the name). Prefers the per-day buttons
+   * ("Monday, 11 AM to 10 PM, Copy open hours"), then the 7-row table, then the
+   * collapsed summary line. Returns null when no hours are shown.
+   */
+  private async readFullHours(page: PwPage, signal: AbortSignal): Promise<string | null> {
+    await this.expandHours(page, signal);
+    try {
+      return await page.evaluate(() => {
+        const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        const dayRe = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i;
+
+        const week: Record<string, string> = {};
+        for (const el of Array.from(document.querySelectorAll("[aria-label]"))) {
+          const l = (el.getAttribute("aria-label") ?? "").replace(/,\s*Copy open hours\s*$/i, "").trim();
+          const m = l.match(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*(.+)$/i);
+          if (m && (/\d/.test(m[2]!) || /closed/i.test(m[2]!))) {
+            const day = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1).toLowerCase();
+            if (!week[day]) week[day] = m[2]!.trim();
+          }
+        }
+        const listed = DAYS.filter((d) => week[d]);
+        if (listed.length >= 2) return listed.map((d) => `${d}: ${week[d]}`).join("\n");
+
+        for (const t of Array.from(document.querySelectorAll("table"))) {
+          const rows = Array.from(t.querySelectorAll("tr"))
+            .map((r) => (r.textContent ?? "").replace(/\s+/g, " ").trim())
+            .filter((r) => dayRe.test(r))
+            .map((r) => r.replace(dayRe, (d) => d + ": "));
+          if (rows.length >= 2) return rows.join("\n");
+        }
+
+        for (const el of Array.from(document.querySelectorAll("[aria-label]"))) {
+          const h = el.getAttribute("aria-label");
+          if (
+            h &&
+            h.length < 220 &&
+            /\d/.test(h) &&
+            /(open|clos|a\.?m\.?\b|p\.?m\.?\b|24 hours|24\/7)/i.test(h) &&
+            !/review|star|rating|photo|price/i.test(h)
+          ) {
+            return h.trim();
+          }
+        }
+        return null;
+      });
+    } catch {
+      return null;
+    }
   }
 }

@@ -88,3 +88,26 @@ export function parsePhone(aria: string | null, itemId: string | null): string |
   const fromId = itemId?.replace(/^phone:tel:/i, "").trim();
   return fromId || undefined;
 }
+
+/** Tracking params Google (and others) staple onto the outbound website link. */
+const TRACKING_PARAM = /^(utm_|gclid$|fbclid$|mc_|_hs|yclid$|msclkid$|dclid$|igshid$|ref$|ref_src$|source$)/i;
+
+/**
+ * Strip tracking noise from a business website URL — Google appends
+ * `?utm_source=google&utm_medium=organic&…` to the "Website" link. Removes any
+ * tracking param + the hash, keeps genuine params and the path. Returns undefined
+ * for an empty/unparseable input (left as-is if it can't be parsed).
+ */
+export function cleanWebsite(url: string | null | undefined): string | undefined {
+  if (!url || !url.trim()) return undefined;
+  try {
+    const u = new URL(url.trim());
+    for (const key of [...u.searchParams.keys()]) {
+      if (TRACKING_PARAM.test(key)) u.searchParams.delete(key);
+    }
+    u.hash = "";
+    return u.toString().replace(/\?$/, "");
+  } catch {
+    return url.trim();
+  }
+}

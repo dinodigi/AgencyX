@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractPlaceIds, bestPlaceId, parseStars, parseReviews, parsePhone } from "../src/main/scraper/selectors.ts";
+import { extractPlaceIds, bestPlaceId, parseStars, parseReviews, parsePhone, cleanWebsite } from "../src/main/scraper/selectors.ts";
 
 // A real Maps place href captured in the 2026-07-13 fresh-session recon.
 const HREF =
@@ -40,4 +40,16 @@ test("parsePhone prefers the aria-label, falls back to the tel data-item-id", ()
   assert.equal(parsePhone("Phone: (213) 468-8333", "phone:tel:+12134688333"), "(213) 468-8333");
   assert.equal(parsePhone(null, "phone:tel:+12134688333"), "+12134688333");
   assert.equal(parsePhone(null, null), undefined);
+});
+
+test("cleanWebsite strips Google's utm/tracking params but keeps real ones", () => {
+  assert.equal(cleanWebsite("https://luv2eatthaibistro.com/?utm_source=google"), "https://luv2eatthaibistro.com/");
+  assert.equal(
+    cleanWebsite("https://mikediamondservices.com/?utm_source=google&utm_medium=organic&utm_campaign=gmb-losangeles"),
+    "https://mikediamondservices.com/",
+  );
+  assert.equal(cleanWebsite("https://x.com/page?id=5&utm_source=g"), "https://x.com/page?id=5");
+  assert.equal(cleanWebsite("https://x.com/#section"), "https://x.com/");
+  assert.equal(cleanWebsite(""), undefined);
+  assert.equal(cleanWebsite(null), undefined);
 });

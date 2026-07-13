@@ -73,7 +73,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 )
               }
             />
-            <Field label="Hours" value={lead.hours} />
+            <Field label="Hours" value={lead.hours ? <span className="whitespace-pre-line">{lead.hours}</span> : undefined} />
             <Field label="Price level" value={lead.price_level} />
             <Field label="Claimed" value={lead.claimed ? "yes" : <span className="text-[var(--color-stage-building)]">no</span>} />
           </Section>
