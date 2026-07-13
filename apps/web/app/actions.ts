@@ -1,8 +1,35 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { AgentXError } from "@dinosales/agentx-client";
 import { makeQueryDedupKey, normalizeKeyword, normalizeZip } from "@dinosales/types";
 import { withClient } from "@/lib/agentx.ts";
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function isRateLimit(e: unknown): boolean {
+  return e instanceof AgentXError && (e.status === 429 || /too many requests/i.test(e.message));
+}
+
+/**
+ * Run one delivery-API call with 429-aware exponential backoff. AgentX
+ * rate-limits the delivery API (limits undocumented) and has no bulk
+ * endpoints, so every loop of writes must pace itself and absorb 429s.
+ * Gives up after ~15s of continuous rate-limiting (0.5+1+2+4+8).
+ */
+async function withBackoff<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRateLimit(e) || attempt >= 5) throw e;
+      await sleep(500 * 2 ** attempt);
+    }
+  }
+}
+
+/** Gap between calls in a write loop — stay politely under the limiter. */
+const WRITE_PACE_MS = 200;
 
 export interface BatchResult {
   ok: boolean;
@@ -46,13 +73,22 @@ export async function createBatch(_prev: BatchResult, formData: FormData): Promi
     for (const keyword of keywords) {
       for (const zip of zips) {
         const dedup_key = makeQueryDedupKey(ctx.session.orgId, keyword, zip);
-        const res = await ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, max_leads: maxLeads });
+        const res = await withBackoff(() =>
+          ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, max_leads: maxLeads }),
+        );
         if (res.alreadySynced) existing++;
         else created++;
+        await sleep(WRITE_PACE_MS);
       }
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), created, existing };
+    const done = created + existing;
+    const msg = isRateLimit(e)
+      ? `Queued ${done} of ${total}, then AgentX kept rate-limiting. Re-submit the same batch — already-created units are skipped, not duplicated.`
+      : e instanceof Error
+        ? e.message
+        : String(e);
+    return { ok: false, error: msg, created, existing };
   }
 
   revalidatePath("/coverage");
@@ -107,7 +143,9 @@ export async function createSearch(_prev: SearchResult, formData: FormData): Pro
 
   let existing = false;
   try {
-    const res = await ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, ...options });
+    const res = await withBackoff(() =>
+      ctx.client.upsertSearchQuery({ org_id: ctx.session.orgId, dedup_key, keyword, zip, ...options }),
+    );
     existing = res.alreadySynced;
     if (res.alreadySynced) {
       // Existing coverage — refresh its options and re-queue it for a new pass,
@@ -118,7 +156,7 @@ export async function createSearch(_prev: SearchResult, formData: FormData): Pro
         patch.status = "pending";
         patch.queued_at = new Date().toISOString(); // re-queued now — back of the FIFO line
       }
-      await ctx.client.update("search_queries", res.id, patch);
+      await withBackoff(() => ctx.client.update("search_queries", res.id, patch));
     }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -135,7 +173,8 @@ export interface DeleteResult {
 }
 
 /** Delete one or more leads. Owner/admin only (enforced by the delivery API's
- *  write access). Used by the leads-table selection toolbar and the lead page. */
+ *  write access). No bulk endpoint exists, so this paces one DELETE at a time
+ *  and absorbs 429s; on a hard rate-limit it reports partial progress. */
 export async function deleteLeads(ids: string[]): Promise<DeleteResult> {
   const ctx = await withClient();
   if (!ctx) return { ok: false, error: "Not signed in." };
@@ -145,11 +184,17 @@ export async function deleteLeads(ids: string[]): Promise<DeleteResult> {
   let deleted = 0;
   try {
     for (const id of unique) {
-      await ctx.client.remove("leads", id);
+      await withBackoff(() => ctx.client.remove("leads", id));
       deleted++;
+      if (deleted < unique.length) await sleep(WRITE_PACE_MS);
     }
   } catch (e) {
-    return { ok: false, deleted, error: e instanceof Error ? e.message : String(e) };
+    revalidatePath("/leads"); // some may have deleted before the failure — show that
+    const msg = e instanceof Error ? e.message : String(e);
+    const detail = isRateLimit(e)
+      ? `Deleted ${deleted} of ${unique.length}, then AgentX kept rate-limiting. Wait a few seconds and delete the rest.`
+      : `Deleted ${deleted} of ${unique.length} — then: ${msg}`;
+    return { ok: false, deleted, error: detail };
   }
   revalidatePath("/leads");
   return { ok: true, deleted };

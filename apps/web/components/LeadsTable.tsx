@@ -40,32 +40,41 @@ export function LeadsTable({ rows }: { rows: Leads[] }) {
     setError(null);
     startTransition(async () => {
       const res = await deleteLeads(targets);
-      if (!res.ok) {
-        setError(res.error ?? "Delete failed.");
-        return;
-      }
+      // Always refresh + reselect-nothing: a partial failure still deleted some
+      // rows, and stale ids in the selection would miscount against fresh data.
       setSelected(new Set());
       router.refresh();
+      if (!res.ok) setError(res.error ?? "Delete failed.");
     });
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Selection toolbar — only occupies space once something is selected. */}
-      {selected.size > 0 && (
-        <div className="animate-in flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.8)]">
-          <span className="font-medium">{selected.size} selected</span>
-          <button
-            onClick={onDelete}
-            disabled={pending}
-            className="rounded-lg bg-red-500/90 px-3 py-1.5 font-medium text-white shadow-[0_4px_14px_-6px_rgba(239,68,68,0.7)] hover:-translate-y-px hover:bg-red-500 disabled:opacity-50"
-          >
-            {pending ? "Deleting…" : `Delete ${selected.size}`}
-          </button>
-          <button onClick={() => setSelected(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-ink)]">
-            Clear
-          </button>
+      {/* Selection / notice toolbar — shows while rows are selected OR an error
+          from the last delete still needs to be read. */}
+      {(selected.size > 0 || error) && (
+        <div className="animate-in flex flex-wrap items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.8)]">
+          {selected.size > 0 && (
+            <>
+              <span className="font-medium">{selected.size} selected</span>
+              <button
+                onClick={onDelete}
+                disabled={pending}
+                className="rounded-lg bg-red-500/90 px-3 py-1.5 font-medium text-white shadow-[0_4px_14px_-6px_rgba(239,68,68,0.7)] hover:-translate-y-px hover:bg-red-500 disabled:opacity-50"
+              >
+                {pending ? "Deleting…" : `Delete ${selected.size}`}
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-ink)]">
+                Clear
+              </button>
+            </>
+          )}
           {error && <span className="text-red-400">{error}</span>}
+          {error && (
+            <button onClick={() => setError(null)} className="text-[var(--color-muted)] hover:text-[var(--color-ink)]">
+              Dismiss
+            </button>
+          )}
         </div>
       )}
 
