@@ -259,7 +259,12 @@
               "mcp",
               "admin"
             ]
-          }
+          },
+          { "from": "qualified", "to": "scraped", "actors": ["delivery", "mcp", "admin"] },
+          { "from": "building", "to": "qualified", "actors": ["delivery", "mcp", "admin"] },
+          { "from": "proposed", "to": "building", "actors": ["delivery", "mcp", "admin"] },
+          { "from": "sold", "to": "proposed", "actors": ["delivery", "mcp", "admin"] },
+          { "from": "client", "to": "sold", "actors": ["delivery", "mcp", "admin"] }
         ]
       },
       "checkout": null,

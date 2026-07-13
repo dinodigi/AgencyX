@@ -162,8 +162,9 @@ export interface StageResult {
   stage?: string;
 }
 
-/** Move a lead to the next pipeline stage. AgentX's workflow enforces that only
- *  a declared transition is allowed (invalid moves are rejected). */
+/** Move a lead to another pipeline stage — forward or back one step. AgentX's
+ *  workflow enforces that only a declared transition is allowed (both directions
+ *  are declared; skipping stages is still rejected). */
 export async function advanceStage(_prev: StageResult, formData: FormData): Promise<StageResult> {
   const ctx = await withClient();
   if (!ctx) return { ok: false, error: "Not signed in." };
