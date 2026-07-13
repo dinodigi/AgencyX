@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { advanceStage, type StageResult } from "@/app/actions.ts";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { advanceStage } from "@/app/actions.ts";
 import { STAGE_ORDER } from "@/lib/format.ts";
 
 const STAGE_COLORS: Record<string, string> = {
@@ -13,13 +14,43 @@ const STAGE_COLORS: Record<string, string> = {
   client: "var(--color-stage-client)",
 };
 
-const INITIAL: StageResult = { ok: false };
-
-/** Pipeline visual + "advance to next stage" action for one lead. */
+/** Pipeline visual + "advance to next stage" action for one lead.
+ *
+ *  Uses an explicit handler (not a bare form action) so a failure is ALWAYS
+ *  visible: a stage the workflow rejects surfaces its message, and an
+ *  unreachable server action — e.g. a tab left open across a redeploy, whose
+ *  action id no longer exists — surfaces a "refresh" hint instead of silently
+ *  doing nothing. */
 export function StageActions({ leadId, stage }: { leadId: string; stage: string }) {
-  const [state, action, pending] = useActionState(advanceStage, INITIAL);
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const idx = STAGE_ORDER.indexOf(stage as (typeof STAGE_ORDER)[number]);
   const next = idx >= 0 && idx < STAGE_ORDER.length - 1 ? STAGE_ORDER[idx + 1] : null;
+
+  function advance() {
+    if (!next) return;
+    setMsg(null);
+    start(async () => {
+      try {
+        const fd = new FormData();
+        fd.append("leadId", leadId);
+        fd.append("toStage", next);
+        const res = await advanceStage({ ok: false }, fd);
+        if (res.ok) {
+          setMsg({ ok: true, text: `Moved to ${res.stage}.` });
+          router.refresh();
+        } else {
+          setMsg({ ok: false, text: res.error ?? "Couldn't move this lead." });
+        }
+      } catch {
+        // The action itself didn't run (network, or a stale action id after a
+        // redeploy). A reload re-binds the current build's actions.
+        setMsg({ ok: false, text: "Couldn't reach the server — refresh the page and try again." });
+      }
+    });
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -50,10 +81,7 @@ export function StageActions({ leadId, stage }: { leadId: string; stage: string 
                 </span>
               </div>
               {i < STAGE_ORDER.length - 1 && (
-                <span
-                  className="mx-1 mb-5 h-0.5 min-w-6 flex-1 rounded-full"
-                  style={{ background: i < idx ? color : "var(--color-border)" }}
-                />
+                <span className="mx-1 mb-5 h-0.5 min-w-6 flex-1 rounded-full" style={{ background: i < idx ? color : "var(--color-border)" }} />
               )}
             </div>
           );
@@ -63,18 +91,13 @@ export function StageActions({ leadId, stage }: { leadId: string; stage: string 
       {/* Advance action */}
       <div className="flex items-center gap-3">
         {next ? (
-          <form action={action}>
-            <input type="hidden" name="leadId" value={leadId} />
-            <input type="hidden" name="toStage" value={next} />
-            <button type="submit" disabled={pending} className="btn-primary px-4 py-2 text-sm">
-              {pending ? "Moving…" : `Advance to ${next} →`}
-            </button>
-          </form>
+          <button type="button" onClick={advance} disabled={pending} className="btn-primary px-4 py-2 text-sm">
+            {pending ? "Moving…" : `Advance to ${next} →`}
+          </button>
         ) : (
           <span className="text-sm text-[var(--color-stage-client)]">Pipeline complete — this lead is a client.</span>
         )}
-        {state.error && <span className="text-sm text-red-400">{state.error}</span>}
-        {state.ok && <span className="text-sm text-[var(--color-stage-sold)]">Moved to {state.stage}.</span>}
+        {msg && <span className={`text-sm ${msg.ok ? "text-[var(--color-stage-sold)]" : "text-red-400"}`}>{msg.text}</span>}
       </div>
     </div>
   );
