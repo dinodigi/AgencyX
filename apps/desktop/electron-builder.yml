@@ -2,8 +2,8 @@
 # published to GitHub Releases; electron-updater reads that feed for self-update.
 # Code signing (§7.3): set CSC_LINK + CSC_KEY_PASSWORD in CI (Authenticode cert,
 # OV or EV — roadmap open decision #2). Mac target adds later as a build matrix.
-appId: com.dinosales.leadengine
-productName: Lead Engine
+appId: com.dinosales.agencyx
+productName: AgencyX
 # Rebuild native deps (better-sqlite3, keytar) for Electron's ABI at package time.
 npmRebuild: true
 # pnpm symlinks node_modules; let electron-builder follow them when collecting deps.

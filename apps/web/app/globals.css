@@ -1,22 +1,25 @@
 @import "tailwindcss";
 
-/* Design tokens — mirror packages/ui so web + desktop read as one product. */
+/* AgencyX design tokens — mirror apps/desktop/src/renderer/styles.css so web +
+   desktop read as one product. Brand = violet→cyan gradient on a deep navy. */
 @theme {
-  --color-brand: #0f766e;
+  --color-brand: #7c5cff;
+  --color-brand-2: #22d3ee;
   --color-brand-fg: #ffffff;
-  --color-bg: #0b1220;
-  --color-surface: #131c2e;
-  --color-surface-2: #1b2740;
-  --color-border: #26324c;
-  --color-ink: #e6ecf5;
-  --color-muted: #8595ad;
+
+  --color-bg: #070b15;
+  --color-surface: #0d1526;
+  --color-surface-2: #16203a;
+  --color-border: #1e2b4a;
+  --color-ink: #e9edf8;
+  --color-muted: #8494b2;
 
   --color-stage-scraped: #64748b;
-  --color-stage-qualified: #0ea5e9;
+  --color-stage-qualified: #22d3ee;
   --color-stage-building: #f59e0b;
-  --color-stage-proposed: #8b5cf6;
-  --color-stage-sold: #22c55e;
-  --color-stage-client: #0f766e;
+  --color-stage-proposed: #a78bfa;
+  --color-stage-sold: #34d399;
+  --color-stage-client: #2dd4bf;
 
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 }
@@ -26,8 +29,145 @@ body {
   background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ambient glow so pages don't feel flat — a fixed composited layer (cheaper to
+   paint than background-attachment: fixed). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1200px 500px at 85% -10%, color-mix(in srgb, var(--color-brand) 9%, transparent), transparent 60%),
+    radial-gradient(900px 420px at -10% 110%, color-mix(in srgb, var(--color-brand-2) 6%, transparent), transparent 60%);
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-brand) 40%, transparent);
+  background: color-mix(in srgb, var(--color-brand) 45%, transparent);
+}
+
+/* ---------------------------------------------------------------- motion --- */
+
+@keyframes ax-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ax-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+.animate-in {
+  animation: ax-fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-in-slow {
+  animation: ax-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.pulse-dot {
+  animation: ax-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-in-slow,
+  .pulse-dot {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------------- controls --- */
+
+/* One consistent interactive feel for every native control. */
+button,
+select,
+input,
+textarea,
+a {
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-brand) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+select,
+input[type="number"] {
+  color-scheme: dark;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--color-brand);
+}
+
+/* Primary action — gradient, lifts on hover. Used via className="btn-primary". */
+.btn-primary {
+  background-image: linear-gradient(135deg, var(--color-brand), color-mix(in srgb, var(--color-brand-2) 80%, var(--color-brand)));
+  color: var(--color-brand-fg);
+  border-radius: 0.65rem;
+  font-weight: 600;
+  box-shadow: 0 4px 16px -6px color-mix(in srgb, var(--color-brand) 60%, transparent);
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px -6px color-mix(in srgb, var(--color-brand) 70%, transparent);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+}
+
+/* Text with the brand gradient (headlines, logo). */
+.text-gradient {
+  background-image: linear-gradient(120deg, var(--color-brand) 10%, var(--color-brand-2) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------------------------------------------------------------- chrome --- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-2);
+  border-radius: 999px;
+  border: 2px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

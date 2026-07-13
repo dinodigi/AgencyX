@@ -63,11 +63,7 @@ export function SearchForm() {
       </label>
 
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-medium text-[var(--color-brand-fg)] disabled:opacity-50"
-        >
+        <button type="submit" disabled={pending} className="btn-primary px-4 py-2 text-sm">
           {pending ? "Queuing…" : "Queue search"}
         </button>
         {state.error && <span className="text-sm text-red-400">{state.error}</span>}

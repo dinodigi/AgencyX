@@ -34,7 +34,12 @@ export function SignIn() {
   return (
     <div className="center">
       <div className="card auth-card">
-        <h1 className="brand">Lead Engine</h1>
+        <div className="brand-row">
+          <span className="brand-mark">AX</span>
+          <h1 className="brand">
+            Agency<span className="x">X</span>
+          </h1>
+        </div>
         <p className="muted">Sign in to run the scraper</p>
 
         <label>Email</label>

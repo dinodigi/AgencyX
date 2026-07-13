@@ -33,7 +33,7 @@ const token = Boolean(process.env.AGENTX_DELIVERY_TOKEN);
 const clerk = Boolean(process.env.VITE_CLERK_PUBLISHABLE_KEY);
 
 console.log(`
-Lead Engine — desktop preflight
+AgencyX — desktop preflight
 ────────────────────────────────────────────
  Node ${process.version}
  ${ok(electron)} electron            ${electron ? "ready" : "run: pnpm install"}

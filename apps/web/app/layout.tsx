@@ -5,8 +5,8 @@ import "./globals.css";
 import { Nav } from "@/components/Nav.tsx";
 
 export const metadata: Metadata = {
-  title: "Lead Engine",
-  description: "Agency lead pipeline — scrape, qualify, build, propose, sell.",
+  title: "AgencyX",
+  description: "Agency lead engine — scrape, qualify, build, propose, sell.",
 };
 
 // The app is inherently per-request (org-scoped auth) — nothing to prerender.

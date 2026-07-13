@@ -17,7 +17,12 @@ export function Dashboard({ email, onSignOut }: { email: string; onSignOut: () =
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand small">Lead Engine</span>
+        <span className="brand-row">
+          <span className="brand-mark">AX</span>
+          <span className="brand small">
+            Agency<span className="x">X</span>
+          </span>
+        </span>
         <span className="spacer" />
         {email && <span className="muted">{email}</span>}
         <button className="ghost" onClick={onSignOut}>

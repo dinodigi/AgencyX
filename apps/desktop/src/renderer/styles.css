@@ -1,17 +1,21 @@
+/* AgencyX desktop — mirrors apps/web/app/globals.css so web + desktop read as
+   one product. Brand = violet→cyan gradient on a deep navy. */
+
 :root {
-  --brand: #0f766e;
-  --bg: #0b1220;
-  --surface: #131c2e;
-  --surface-2: #1b2740;
-  --text: #e6ecf5;
-  --muted: #8595ad;
-  --border: #26324c;
+  --brand: #7c5cff;
+  --brand-2: #22d3ee;
+  --bg: #070b15;
+  --surface: #0d1526;
+  --surface-2: #16203a;
+  --text: #e9edf8;
+  --muted: #8494b2;
+  --border: #1e2b4a;
   --pending: #64748b;
   --running: #f59e0b;
-  --completed: #22c55e;
-  --failed: #ef4444;
-  --online: #22c55e;
-  --offline: #ef4444;
+  --completed: #34d399;
+  --failed: #f87171;
+  --online: #34d399;
+  --offline: #f87171;
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
@@ -24,7 +28,65 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Ambient glow, composited (cheap to paint). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(900px 400px at 90% -10%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 60%),
+    radial-gradient(700px 360px at -10% 110%, color-mix(in srgb, var(--brand-2) 7%, transparent), transparent 60%);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+/* ---------------------------------------------------------------- motion --- */
+
+@keyframes ax-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ax-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes ax-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------- layout --- */
 
 .center {
   display: grid;
@@ -42,6 +104,9 @@ body {
 .warn {
   color: var(--running);
 }
+.ok {
+  color: var(--completed);
+}
 .pad {
   padding: 16px;
 }
@@ -58,25 +123,56 @@ body {
   font-size: 12px;
 }
 
+/* Brand lockup — monogram + name (used in topbar + sign-in). */
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background-image: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--brand) 80%, transparent);
+}
 .brand {
-  color: var(--brand);
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0;
+  color: var(--text);
+}
+.brand .x {
+  background-image: linear-gradient(120deg, var(--brand) 10%, var(--brand-2) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .brand.small {
   font-size: 15px;
+}
+.brand-tag {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.8);
+  animation: ax-fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .auth-card {
-  width: 380px;
-  padding: 28px;
+  width: 400px;
+  padding: 30px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -87,40 +183,82 @@ body {
 .auth-card label {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .auth-card input,
 .auth-card textarea {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--text);
-  padding: 9px 11px;
+  padding: 10px 12px;
   font-family: inherit;
   font-size: 13px;
   resize: vertical;
 }
 
+/* -------------------------------------------------------------- controls --- */
+
+button,
+input,
+select,
+textarea {
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease,
+    opacity 0.15s ease,
+    filter 0.15s ease;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+input[type="checkbox"] {
+  accent-color: var(--brand);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: color-mix(in srgb, var(--brand) 60%, var(--border));
+}
+
 button {
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid transparent;
   font-family: inherit;
   font-size: 13px;
   padding: 8px 14px;
-  transition: filter 0.15s;
 }
 button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 button.primary {
-  background: var(--brand);
+  background-image: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand-2) 80%, var(--brand)));
   color: white;
+  font-weight: 600;
   margin-top: 14px;
+  box-shadow: 0 4px 16px -6px color-mix(in srgb, var(--brand) 60%, transparent);
 }
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px -6px color-mix(in srgb, var(--brand) 70%, transparent);
+}
+button.primary:active:not(:disabled) {
+  transform: translateY(0);
 }
 button.ghost {
   background: transparent;
@@ -129,11 +267,14 @@ button.ghost {
 }
 button.ghost:hover:not(:disabled) {
   background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
 }
 button.ghost.tiny {
   padding: 4px 10px;
   font-size: 12px;
 }
+
+/* ------------------------------------------------------------------- app --- */
 
 .app {
   display: flex;
@@ -146,7 +287,8 @@ button.ghost.tiny {
   gap: 12px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
 }
 .grid {
   flex: 1;
@@ -171,6 +313,33 @@ button.ghost.tiny {
   min-height: 0;
 }
 
+/* ---------------------------------------------------------------- panels --- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-head h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- tables --- */
+
 .leads-scroll {
   flex: 1;
   overflow: auto;
@@ -189,27 +358,65 @@ table.leads th {
   position: sticky;
   top: 0;
   background: var(--surface);
+  z-index: 1;
 }
 table.leads td {
   padding: 6px 12px;
   border-top: 1px solid var(--border);
   vertical-align: top;
 }
+table.leads tbody tr {
+  animation: ax-row-in 0.25s ease-out both;
+  transition: background-color 0.12s ease;
+}
+table.leads tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
 .lead-name {
   font-weight: 500;
 }
-.ok {
-  color: var(--completed);
+
+table.queue {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
 }
+table.queue th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 8px 14px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+table.queue td {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+table.queue tbody tr {
+  transition: background-color 0.12s ease;
+}
+table.queue tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+/* --------------------------------------------------------------- run ctl --- */
+
 .num-input {
   width: 68px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--text);
   padding: 6px 8px;
   font-family: inherit;
   font-size: 13px;
+}
+select.num-input {
+  width: auto;
+  min-width: 118px;
 }
 .runctl-body {
   padding: 12px 14px;
@@ -227,7 +434,7 @@ table.leads td {
   flex: 1;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--text);
   padding: 8px 11px;
   font-family: inherit;
@@ -243,66 +450,56 @@ table.leads td {
   font-size: 12px;
   color: var(--muted);
 }
-.panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.panel-head h2 {
-  font-size: 14px;
-  margin: 0;
+.runctl-body button.primary {
+  margin-top: 0;
 }
 
-table.queue {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-table.queue th {
-  text-align: left;
-  color: var(--muted);
-  font-weight: 500;
-  padding: 8px 14px;
-  position: sticky;
-  top: 0;
-  background: var(--surface);
-}
-table.queue td {
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-}
+/* ----------------------------------------------------------------- pills --- */
 
 .pill {
-  display: inline-block;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
   border-radius: 999px;
   font-size: 11px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: #0b1220;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+.pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .pill.pending {
-  background: var(--pending);
-  color: white;
+  color: var(--pending);
+  background: color-mix(in srgb, var(--pending) 13%, transparent);
+  border-color: color-mix(in srgb, var(--pending) 35%, transparent);
 }
 .pill.running {
-  background: var(--running);
+  color: var(--running);
+  background: color-mix(in srgb, var(--running) 13%, transparent);
+  border-color: color-mix(in srgb, var(--running) 35%, transparent);
+}
+.pill.running::before {
+  animation: ax-pulse 1.4s ease-in-out infinite;
 }
 .pill.completed {
-  background: var(--completed);
+  color: var(--completed);
+  background: color-mix(in srgb, var(--completed) 13%, transparent);
+  border-color: color-mix(in srgb, var(--completed) 35%, transparent);
 }
 .pill.failed {
-  background: var(--failed);
-  color: white;
+  color: var(--failed);
+  background: color-mix(in srgb, var(--failed) 13%, transparent);
+  border-color: color-mix(in srgb, var(--failed) 35%, transparent);
 }
+
+/* ------------------------------------------------------------------- log --- */
 
 .log {
   flex: 1;
@@ -315,6 +512,7 @@ table.queue td {
   display: flex;
   gap: 10px;
   padding: 2px 14px;
+  animation: ax-row-in 0.2s ease-out both;
 }
 .log-line.warn {
   color: var(--running);
@@ -327,13 +525,15 @@ table.queue td {
   flex-shrink: 0;
 }
 
+/* ------------------------------------------------------------- statusbar --- */
+
 .statusbar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 16px;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   font-size: 12px;
 }
 .dot {
@@ -343,7 +543,27 @@ table.queue td {
 }
 .dot.online {
   background: var(--online);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--online) 70%, transparent);
+  animation: ax-pulse 2.2s ease-in-out infinite;
 }
 .dot.offline {
   background: var(--offline);
+}
+
+/* ------------------------------------------------------------- scrollbar --- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-2);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

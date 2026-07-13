@@ -44,7 +44,7 @@ export function AuthGate({ status }: { status: AuthStatus }) {
       </ClerkLoading>
       <ClerkLoaded>
         {status === "no-org" ? (
-          <div className="flex flex-col items-center gap-4">
+          <div className="animate-in flex flex-col items-center gap-4">
             <p className="text-sm text-[var(--color-muted)]">Select or create an organization to continue.</p>
             <OrganizationSwitcher hidePersonal afterCreateOrganizationUrl="/leads" afterSelectOrganizationUrl="/leads" />
             <CreateOrganization afterCreateOrganizationUrl="/leads" />
@@ -52,7 +52,20 @@ export function AuthGate({ status }: { status: AuthStatus }) {
         ) : (
           <>
             <SignedOut>
-              <SignIn routing="hash" />
+              <div className="animate-in flex flex-col items-center gap-6">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-[image:linear-gradient(135deg,var(--color-brand),var(--color-brand-2))] text-sm font-black text-white shadow-[0_4px_18px_-4px_color-mix(in_srgb,var(--color-brand)_80%,transparent)]">
+                    AX
+                  </span>
+                  <div>
+                    <div className="text-lg font-bold tracking-tight">
+                      Agency<span className="text-gradient">X</span>
+                    </div>
+                    <div className="text-xs text-[var(--color-muted)]">scrape · qualify · build · propose · sell</div>
+                  </div>
+                </div>
+                <SignIn routing="hash" />
+              </div>
             </SignedOut>
             <SignedIn>
               <div className="mx-auto max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">

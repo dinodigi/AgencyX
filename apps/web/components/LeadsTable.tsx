@@ -53,12 +53,12 @@ export function LeadsTable({ rows }: { rows: Leads[] }) {
     <div className="flex flex-col gap-3">
       {/* Selection toolbar — only occupies space once something is selected. */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm">
+        <div className="animate-in flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.8)]">
           <span className="font-medium">{selected.size} selected</span>
           <button
             onClick={onDelete}
             disabled={pending}
-            className="rounded-md bg-red-500/90 px-3 py-1.5 font-medium text-white hover:bg-red-500 disabled:opacity-50"
+            className="rounded-lg bg-red-500/90 px-3 py-1.5 font-medium text-white shadow-[0_4px_14px_-6px_rgba(239,68,68,0.7)] hover:-translate-y-px hover:bg-red-500 disabled:opacity-50"
           >
             {pending ? "Deleting…" : `Delete ${selected.size}`}
           </button>
@@ -69,7 +69,7 @@ export function LeadsTable({ rows }: { rows: Leads[] }) {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="animate-in overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.8)]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -92,7 +92,9 @@ export function LeadsTable({ rows }: { rows: Leads[] }) {
                 return (
                   <tr
                     key={l.id}
-                    className={`border-b border-[var(--color-border)] last:border-0 ${checked ? "bg-[var(--color-surface-2)]" : ""}`}
+                    className={`border-b border-[var(--color-border)] last:border-0 ${
+                      checked ? "bg-[var(--color-surface-2)]" : "hover:bg-[color-mix(in_srgb,var(--color-surface-2)_50%,transparent)]"
+                    }`}
                   >
                     <Td>
                       <input
