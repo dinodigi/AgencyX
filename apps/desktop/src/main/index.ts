@@ -9,7 +9,8 @@
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type { AuthState, CapturedLead, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
-import type { RawListing } from "@dinosales/types";
+import type { RawListing, ScrapeFilter } from "@dinosales/types";
+import { toScrapeFilter } from "@dinosales/types";
 import { AuthManager, type SessionInput } from "./auth.ts";
 import { getOrCreateDeviceId } from "./device.ts";
 import { createOutbox, type OutboxStore } from "./outbox.ts";
@@ -103,7 +104,10 @@ function registerIpc(): void {
   }));
 
   ipcMain.handle("run:getState", () => runState);
-  ipcMain.handle("run:start", (_e, args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }) => startRun(args));
+  ipcMain.handle(
+    "run:start",
+    (_e, args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }) => startRun(args),
+  );
   ipcMain.handle("run:claimNext", () => claimNextRun());
   ipcMain.handle("run:stop", () => stopRun());
 }
@@ -201,7 +205,7 @@ function setRunState(patch: Partial<RunState>): void {
   send("run:changed", runState);
 }
 
-async function startRun(args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }): Promise<RunState> {
+async function startRun(args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }): Promise<RunState> {
   const state = auth.getState();
   if (state.status !== "signed-in" || !state.orgId) {
     log("error", "cannot run: not signed in");
@@ -218,7 +222,7 @@ async function startRun(args: { keyword: string; zip: string; mock?: boolean; ma
   // Ad-hoc run: no queue row to claim; leads carry agency/device if registered.
   const ctx = currentContext(state.orgId);
   void makeRunner(args.mock === false, args.maxLeads)
-    .runAdhoc(args.keyword, args.zip, ctx, runAbort.signal)
+    .runAdhoc(args.keyword, args.zip, ctx, runAbort.signal, args.filter)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
       void sync.flushNow();
@@ -248,7 +252,9 @@ async function claimNextRun(): Promise<RunState> {
     return runState;
   }
 
-  let pending: { id: string; keyword: string; zip: string; max_leads?: number } | undefined;
+  let pending:
+    | { id: string; keyword: string; zip: string; max_leads?: number; target_website?: string; min_reviews?: number; max_reviews?: number }
+    | undefined;
   try {
     const rows = await client.ax.search_queries.list({
       filter: { status: "pending" },
@@ -268,8 +274,9 @@ async function claimNextRun(): Promise<RunState> {
   runAbort = new AbortController();
   setRunState({ running: true, keyword: pending.keyword, zip: pending.zip, captured: 0, lastOutcome: undefined });
 
+  const filter = toScrapeFilter(pending);
   void makeRunner(false, pending.max_leads)
-    .runQuery(pending.id, pending.keyword, pending.zip, currentContext(state.orgId), runAbort.signal)
+    .runQuery(pending.id, pending.keyword, pending.zip, currentContext(state.orgId), runAbort.signal, filter)
     .then((outcome) => {
       setRunState({ running: false, captured: outcome.captured, lastOutcome: outcome.kind });
       void sync.flushNow();

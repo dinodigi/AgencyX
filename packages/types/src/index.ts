@@ -81,3 +81,57 @@ export interface RawListing {
   photoCount?: number;
   priceLevel?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Scrape target filter — the "who do we keep" rules a search carries. Shared so
+// the desktop (which applies them while scraping) and the web (which sets them
+// on a search_queries row) agree on the exact semantics. Applied AFTER phase-2
+// extraction, before a listing becomes a lead.
+// ---------------------------------------------------------------------------
+
+export const TARGET_WEBSITE = ["any", "missing", "has"] as const;
+export type TargetWebsite = (typeof TARGET_WEBSITE)[number];
+
+export interface ScrapeFilter {
+  /** "missing" = only businesses without a website (the classic agency target). */
+  targetWebsite?: TargetWebsite;
+  /** Keep only listings with at least this many reviews. */
+  minReviews?: number;
+  /** Keep only listings with at most this many reviews (target weak listings). */
+  maxReviews?: number;
+}
+
+/** True when a scraped listing matches the search's target filter. */
+export function passesFilter(listing: RawListing, f: ScrapeFilter | undefined | null): boolean {
+  if (!f) return true;
+  if (f.targetWebsite === "missing" && deriveHasWebsite(listing.website)) return false;
+  if (f.targetWebsite === "has" && !deriveHasWebsite(listing.website)) return false;
+  const reviews = listing.reviewCount ?? 0;
+  if (typeof f.minReviews === "number" && reviews < f.minReviews) return false;
+  if (typeof f.maxReviews === "number" && reviews > f.maxReviews) return false;
+  return true;
+}
+
+/** A short human description of a filter for run logs ("no website · ≤20 reviews"). */
+export function describeFilter(f: ScrapeFilter | undefined | null): string {
+  if (!f) return "no filter";
+  const parts: string[] = [];
+  if (f.targetWebsite === "missing") parts.push("no website");
+  if (f.targetWebsite === "has") parts.push("has website");
+  if (typeof f.minReviews === "number") parts.push(`≥${f.minReviews} reviews`);
+  if (typeof f.maxReviews === "number") parts.push(`≤${f.maxReviews} reviews`);
+  return parts.length ? parts.join(" · ") : "no filter";
+}
+
+/** Normalize raw search_queries fields into a ScrapeFilter (drops "any"/empty). */
+export function toScrapeFilter(row: {
+  target_website?: string | null;
+  min_reviews?: number | null;
+  max_reviews?: number | null;
+}): ScrapeFilter {
+  const f: ScrapeFilter = {};
+  if (row.target_website === "missing" || row.target_website === "has") f.targetWebsite = row.target_website;
+  if (typeof row.min_reviews === "number") f.minReviews = row.min_reviews;
+  if (typeof row.max_reviews === "number") f.maxReviews = row.max_reviews;
+  return f;
+}

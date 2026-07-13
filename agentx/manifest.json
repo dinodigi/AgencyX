@@ -681,6 +681,31 @@
           "type": "number",
           "label": "Max Leads",
           "integer": true,
+          "min": 1,
+          "max": 200,
+          "publicRead": true
+        },
+        {
+          "name": "target_website",
+          "type": "enum",
+          "label": "Target Website",
+          "options": ["any", "missing", "has"],
+          "publicRead": true
+        },
+        {
+          "name": "min_reviews",
+          "type": "number",
+          "label": "Min Reviews",
+          "integer": true,
+          "min": 0,
+          "publicRead": true
+        },
+        {
+          "name": "max_reviews",
+          "type": "number",
+          "label": "Max Reviews",
+          "integer": true,
+          "min": 0,
           "publicRead": true
         },
         {

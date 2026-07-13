@@ -6,6 +6,7 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 import type { AuthState, QueueItem, SyncStats, RunLogLine, RunState, CapturedLead } from "../shared/ipc.ts";
+import type { ScrapeFilter } from "@dinosales/types";
 
 const api = {
   auth: {
@@ -26,7 +27,7 @@ const api = {
     getInfo: (): Promise<{ deviceId: string; platform: string; appVersion: string }> => ipcRenderer.invoke("device:getInfo"),
   },
   run: {
-    start: (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }): Promise<RunState> =>
+    start: (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }): Promise<RunState> =>
       ipcRenderer.invoke("run:start", args),
     claimNext: (): Promise<RunState> => ipcRenderer.invoke("run:claimNext"),
     stop: (): Promise<RunState> => ipcRenderer.invoke("run:stop"),

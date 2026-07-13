@@ -187,6 +187,9 @@ export function createLeadEngineClient(options: AgentXClientOptions) {
       keyword: string;
       zip: string;
       max_leads?: number;
+      target_website?: "any" | "missing" | "has";
+      min_reviews?: number;
+      max_reviews?: number;
       user?: string;
       agency?: string;
       device?: string;

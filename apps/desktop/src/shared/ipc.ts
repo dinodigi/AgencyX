@@ -5,7 +5,7 @@
  * this in one shared file is what stops the two processes from drifting.
  */
 
-import type { LeadStage, QueryStatus } from "@dinosales/types";
+import type { LeadStage, QueryStatus, ScrapeFilter } from "@dinosales/types";
 
 /** What the renderer is allowed to know about auth (never the raw token). */
 export interface AuthState {
@@ -94,7 +94,7 @@ export interface IpcApi {
 
   "device:getInfo": () => { deviceId: string; platform: string; appVersion: string };
 
-  "run:start": (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number }) => RunState;
+  "run:start": (args: { keyword: string; zip: string; mock?: boolean; maxLeads?: number; filter?: ScrapeFilter }) => RunState;
   "run:claimNext": () => RunState;
   "run:stop": () => RunState;
   "run:getState": () => RunState;

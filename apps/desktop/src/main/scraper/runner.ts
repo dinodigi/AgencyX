@@ -7,8 +7,8 @@
  */
 
 import type { LeadsCreate } from "@dinosales/agentx-client";
-import type { RawListing } from "@dinosales/types";
-import { makeLeadDedupKey, reviewBucket, deriveHasWebsite } from "@dinosales/types";
+import type { RawListing, ScrapeFilter } from "@dinosales/types";
+import { makeLeadDedupKey, reviewBucket, deriveHasWebsite, passesFilter, describeFilter } from "@dinosales/types";
 import type { ScrapeSource, ScrapeOutcome } from "./types.ts";
 import { ScraperEngine } from "./engine.ts";
 import type { OutboxStore } from "../outbox.ts";
@@ -89,9 +89,10 @@ export class ScrapeRunner {
    * the path used to prove the desktop loop before queue/device registration
    * lands; it does not touch query status.
    */
-  async runAdhoc(keyword: string, zip: string, ctx: RunContext, signal: AbortSignal): Promise<ScrapeOutcome> {
-    this.deps.onLog("info", `ad-hoc run: ${keyword}/${zip}`);
+  async runAdhoc(keyword: string, zip: string, ctx: RunContext, signal: AbortSignal, filter?: ScrapeFilter): Promise<ScrapeOutcome> {
+    this.deps.onLog("info", `ad-hoc run: ${keyword}/${zip} — target: ${describeFilter(filter)}`);
     let enqueued = 0;
+    let filtered = 0;
     const outcome = await this.engine.run({
       source: this.deps.makeSource(),
       query: { keyword, zip },
@@ -99,15 +100,27 @@ export class ScrapeRunner {
       signal,
       onLog: this.deps.onLog,
       onListing: (listing) => {
+        if (filter && !passesFilter(listing, filter)) {
+          filtered++;
+          return;
+        }
         if (this.enqueueListing(listing, ctx, undefined) === "queued") enqueued++;
       },
     });
+    if (filtered > 0) this.deps.onLog("info", `${filtered} skipped — didn't match target (${describeFilter(filter)})`);
     this.deps.onLog("info", `ad-hoc run ${outcome.kind} — ${enqueued} new leads queued`);
     this.deps.onOutcome(outcome);
     return outcome;
   }
 
-  async runQuery(queryId: string, keyword: string, zip: string, ctx: RunContext, signal: AbortSignal): Promise<ScrapeOutcome> {
+  async runQuery(
+    queryId: string,
+    keyword: string,
+    zip: string,
+    ctx: RunContext,
+    signal: AbortSignal,
+    filter?: ScrapeFilter,
+  ): Promise<ScrapeOutcome> {
     if (!ctx.deviceRowId) {
       this.deps.onLog("error", "cannot claim a queued query without a registered device");
       const outcome: ScrapeOutcome = { kind: "error", captured: 0, message: "no device row" };
@@ -122,9 +135,10 @@ export class ScrapeRunner {
       return outcome;
     }
 
-    this.deps.onLog("info", `claimed ${keyword}/${zip} — starting run`);
+    this.deps.onLog("info", `claimed ${keyword}/${zip} — starting run (target: ${describeFilter(filter)})`);
     let enqueued = 0;
     let duplicates = 0;
+    let filtered = 0;
 
     const outcome = await this.engine.run({
       source: this.deps.makeSource(),
@@ -133,11 +147,16 @@ export class ScrapeRunner {
       signal,
       onLog: this.deps.onLog,
       onListing: (listing) => {
+        if (filter && !passesFilter(listing, filter)) {
+          filtered++;
+          return;
+        }
         if (this.enqueueListing(listing, ctx, queryId) === "queued") enqueued++;
         else duplicates++;
       },
     });
 
+    if (filtered > 0) this.deps.onLog("info", `${filtered} skipped — didn't match target (${describeFilter(filter)})`);
     if (duplicates > 0) this.deps.onLog("info", `${duplicates} already-seen this run (local dedup)`);
 
     try {

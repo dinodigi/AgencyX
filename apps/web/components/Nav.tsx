@@ -14,8 +14,9 @@ import {
 
 const LINKS = [
   { href: "/leads", label: "Leads" },
-  { href: "/coverage", label: "Coverage" },
+  { href: "/search", label: "Search" },
   { href: "/batches", label: "Batch builder" },
+  { href: "/coverage", label: "Coverage" },
   { href: "/devices", label: "Devices" },
 ];
 
