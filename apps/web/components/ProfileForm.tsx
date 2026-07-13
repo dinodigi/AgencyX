@@ -45,17 +45,21 @@ export function ProfileForm({ initial, initialLogoPreview }: { initial: Partial<
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      setUploading(true);
-      setMsg(null);
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await uploadLogo(fd);
-      setUploading(false);
-      if (res.ok && res.id && res.url) {
-        setV((p) => ({ ...p, logo: res.id }));
-        setLogoPreview(res.url);
+      if (file.size > 10 * 1024 * 1024) {
+        setMsg({ ok: false, text: "That image is over 10 MB — pick a smaller one." });
       } else {
-        setMsg({ ok: false, text: res.error ?? "Upload failed." });
+        setUploading(true);
+        setMsg(null);
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await uploadLogo(fd);
+        setUploading(false);
+        if (res.ok && res.id && res.url) {
+          setV((p) => ({ ...p, logo: res.id }));
+          setLogoPreview(res.url);
+        } else {
+          setMsg({ ok: false, text: res.error ?? "Upload failed." });
+        }
       }
     }
     if (fileRef.current) fileRef.current.value = ""; // allow re-selecting the same file
