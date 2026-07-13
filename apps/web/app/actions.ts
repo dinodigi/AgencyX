@@ -59,6 +59,33 @@ export async function createBatch(_prev: BatchResult, formData: FormData): Promi
   return { ok: true, created, existing, total };
 }
 
+export interface DeleteResult {
+  ok: boolean;
+  deleted?: number;
+  error?: string;
+}
+
+/** Delete one or more leads. Owner/admin only (enforced by the delivery API's
+ *  write access). Used by the leads-table selection toolbar and the lead page. */
+export async function deleteLeads(ids: string[]): Promise<DeleteResult> {
+  const ctx = await withClient();
+  if (!ctx) return { ok: false, error: "Not signed in." };
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return { ok: false, error: "Nothing selected." };
+
+  let deleted = 0;
+  try {
+    for (const id of unique) {
+      await ctx.client.remove("leads", id);
+      deleted++;
+    }
+  } catch (e) {
+    return { ok: false, deleted, error: e instanceof Error ? e.message : String(e) };
+  }
+  revalidatePath("/leads");
+  return { ok: true, deleted };
+}
+
 export interface StageResult {
   ok: boolean;
   error?: string;

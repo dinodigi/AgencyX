@@ -3,13 +3,16 @@ import Link from "next/link";
 import type { LeadsListOpts } from "@dinosales/agentx-client";
 import { withClient, isConfigured } from "@/lib/agentx.ts";
 import { getAuthStatus } from "@/lib/auth.ts";
-import { PageHeader, Card, EmptyState, NotConfigured, StageBadge } from "@/components/ui.tsx";
+import { PageHeader, EmptyState, NotConfigured } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { LeadFilters } from "@/components/LeadFilters.tsx";
+import { LeadsTable } from "@/components/LeadsTable.tsx";
 
 export const dynamic = "force-dynamic";
 
 type SP = Record<string, string | string[] | undefined>;
+
+const DEFAULT_LIMIT = 50;
 
 function buildFilter(sp: SP): LeadsListOpts["filter"] {
   const filter: NonNullable<LeadsListOpts["filter"]> = {};
@@ -41,6 +44,18 @@ function buildSort(sp: SP): NonNullable<LeadsListOpts["sort"]> {
   }
 }
 
+/** Preserve the current query while overriding the offset (for Prev/Next). */
+function pageHref(sp: SP, offset: number): string {
+  const next = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === "offset") continue;
+    if (typeof v === "string" && v) next.set(k, v);
+  }
+  if (offset > 0) next.set("offset", String(offset));
+  const qs = next.toString();
+  return qs ? `/leads?${qs}` : "/leads";
+}
+
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
   if (!isConfigured()) return <NotConfigured />;
   const status = await getAuthStatus();
@@ -51,20 +66,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const filter = buildFilter(sp);
   const sort = buildSort(sp);
+  const limit = Math.max(10, Math.min(500, Number(sp.limit) || DEFAULT_LIMIT));
+  const offset = Math.max(0, Number(sp.offset) || 0);
 
   let rows: Awaited<ReturnType<typeof ctx.ax.leads.list>> = [];
   let error: string | null = null;
   try {
-    rows = await ctx.ax.leads.list({ filter, limit: 200, sort });
+    rows = await ctx.ax.leads.list({ filter, sort, limit, offset });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
+
+  const hasPrev = offset > 0;
+  const hasNext = rows.length === limit;
+  const rangeStart = rows.length === 0 ? 0 : offset + 1;
+  const rangeEnd = offset + rows.length;
 
   return (
     <div>
       <PageHeader
         title="Leads"
-        subtitle={`${rows.length} shown${rows.length === 200 ? "+ (paged)" : ""}`}
+        subtitle={rows.length === 0 ? "No leads" : `Showing ${rangeStart}–${rangeEnd}`}
         actions={
           <Suspense fallback={null}>
             <LeadFilters />
@@ -77,60 +99,35 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         ) : rows.length === 0 ? (
           <EmptyState title="No leads match" hint="Adjust filters, or run a scrape from the desktop app." />
         ) : (
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-muted)]">
-                    <Th>Business</Th>
-                    <Th>Category</Th>
-                    <Th>Website</Th>
-                    <Th>Reviews</Th>
-                    <Th>Rating</Th>
-                    <Th>Claimed</Th>
-                    <Th>Stage</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((l) => (
-                    <tr key={l.id} className="border-b border-[var(--color-border)] last:border-0">
-                      <Td>
-                        <Link href={`/leads/${l.id}`} className="font-medium hover:text-[var(--color-stage-qualified)] hover:underline">
-                          {l.business_name}
-                        </Link>
-                        <div className="text-xs text-[var(--color-muted)]">{l.phone ?? l.address ?? ""}</div>
-                      </Td>
-                      <Td className="text-[var(--color-muted)]">{l.category ?? "—"}</Td>
-                      <Td>
-                        {l.has_website ? (
-                          <a href={l.website} target="_blank" rel="noreferrer" className="text-[var(--color-stage-qualified)] hover:underline">
-                            site ↗
-                          </a>
-                        ) : (
-                          <span className="text-[var(--color-muted)]">none</span>
-                        )}
-                      </Td>
-                      <Td>{l.review_count ?? 0}</Td>
-                      <Td>{l.rating ? l.rating.toFixed(1) : "—"}</Td>
-                      <Td>{l.claimed ? "yes" : <span className="text-[var(--color-stage-building)]">no</span>}</Td>
-                      <Td>
-                        <StageBadge stage={l.stage} />
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <>
+            <LeadsTable rows={rows} />
+            <div className="mt-4 flex items-center justify-between text-sm">
+              <span className="text-[var(--color-muted)]">
+                Showing {rangeStart}–{rangeEnd}
+              </span>
+              <div className="flex items-center gap-2">
+                <PageLink href={pageHref(sp, Math.max(0, offset - limit))} disabled={!hasPrev}>
+                  ← Prev
+                </PageLink>
+                <PageLink href={pageHref(sp, offset + limit)} disabled={!hasNext}>
+                  Next →
+                </PageLink>
+              </div>
             </div>
-          </Card>
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th className="px-4 py-3 font-medium">{children}</th>;
-}
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 ${className}`}>{children}</td>;
+function PageLink({ href, disabled, children }: { href: string; disabled: boolean; children: React.ReactNode }) {
+  if (disabled) {
+    return <span className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-muted)] opacity-40">{children}</span>;
+  }
+  return (
+    <Link href={href} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 hover:bg-[var(--color-surface-2)]">
+      {children}
+    </Link>
+  );
 }

@@ -17,6 +17,7 @@ export function LeadFilters() {
       const next = new URLSearchParams(params.toString());
       if (value) next.set(key, value);
       else next.delete(key);
+      next.delete("offset"); // any filter/sort/size change resets to the first page
       router.push(`/leads?${next.toString()}`);
     },
     [params, router],
@@ -63,6 +64,15 @@ export function LeadFilters() {
         <option value="name">Name (A–Z)</option>
         <option value="rating">Top rated</option>
         <option value="reviews">Most reviews</option>
+      </select>
+
+      {/* How many rows to show per page. */}
+      <select className={sel} value={params.get("limit") ?? "50"} onChange={(e) => set("limit", e.target.value)}>
+        {["25", "50", "100", "200", "500"].map((n) => (
+          <option key={n} value={n}>
+            Show {n}
+          </option>
+        ))}
       </select>
 
       {/* ZIP lives on search_queries, not leads — filter by coverage instead.

@@ -5,6 +5,7 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, Card, EmptyState, NotConfigured, StageBadge } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { StageActions } from "@/components/StageActions.tsx";
+import { DeleteLeadButton } from "@/components/DeleteLeadButton.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +109,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               Sample site + proposal generation fire when a lead reaches <b>building</b> / <b>proposed</b>. (Phase 4/5.)
             </p>
           </Section>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-red-500/20 bg-red-500/[0.03] px-6 py-4">
+          <div>
+            <div className="text-sm font-semibold text-[var(--color-ink)]">Delete this lead</div>
+            <div className="text-xs text-[var(--color-muted)]">Removes it from the pipeline. This can't be undone.</div>
+          </div>
+          <DeleteLeadButton leadId={lead.id} name={lead.business_name} />
         </div>
       </div>
     </div>
