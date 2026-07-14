@@ -573,10 +573,11 @@ function makeQualifyRunner(): QualifyRunner {
       return { reader, close: () => reader.close() };
     },
     runMoz: (input, signal) => new MozAuditor().run(input, { signal, onLog: log }),
-    probe: async (url) => {
+    fetchText: async (url) => {
       try {
         const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(8000) });
-        return res.status;
+        if (!res.ok) return null;
+        return (await res.text()).slice(0, 1_000_000);
       } catch {
         return null;
       }

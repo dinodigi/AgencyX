@@ -7,9 +7,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ListingAuditsCreate } from "@dinosales/agentx-client";
-import type { QualificationScan, RawListing } from "@dinosales/types";
+import type { QualificationScan, RawListing, ScanSite } from "@dinosales/types";
+import { scoreBusinessHealth, scoreContent, scoreListing, scoreSeo, scoreUx } from "@dinosales/types";
 import { parseUsAddress } from "../src/main/qualify/address.ts";
-import { crawlSite, detectTech, normalizeCrawlUrl, type PageRead, type PageReader } from "../src/main/qualify/crawler.ts";
+import {
+  crawlSite,
+  detectTech,
+  normalizeCrawlUrl,
+  parseRobotsTxt,
+  parseSitemapXml,
+  robotsAllows,
+  type PageRead,
+  type PageReader,
+} from "../src/main/qualify/crawler.ts";
 import { parseMozReport } from "../src/main/qualify/moz.ts";
 import { QualifyRunner, serializeScan, type QualifyJobRow, type QualifyRunnerDeps } from "../src/main/qualify/job.ts";
 import { ScrapeBlockedError } from "../src/main/scraper/types.ts";
@@ -74,7 +84,7 @@ test("normalizeCrawlUrl keeps same-origin pages, drops files/off-site/tracking",
   assert.equal(normalizeCrawlUrl("mailto:hi@biz.example", origin), null);
 });
 
-test("crawlSite BFS: same-origin only, silo built, sitemap probed", async () => {
+test("crawlSite BFS: same-origin only, silo built, sitemap read", async () => {
   const root = "https://biz.example/";
   const pages: Record<string, PageRead> = {
     [root]: page(root, { links: ["https://biz.example/services/roofing", "https://biz.example/about", "https://other.example/x"] }),
@@ -88,7 +98,8 @@ test("crawlSite BFS: same-origin only, silo built, sitemap probed", async () => 
     reader: fakeReader(pages),
     startUrl: "https://biz.example",
     signal: new AbortController().signal,
-    probe: async (url) => (url.endsWith("sitemap.xml") ? 200 : 404),
+    fetchText: async (url) =>
+      url.endsWith("/sitemap.xml") ? "<urlset><url><loc>https://biz.example/about</loc></url></urlset>" : null,
   });
   assert.equal(site.pageCount, 4);
   assert.equal(site.truncated, false);
@@ -96,6 +107,82 @@ test("crawlSite BFS: same-origin only, silo built, sitemap probed", async () => 
   assert.equal(site.robotsTxtFound, false);
   const services = site.silo.find((s) => s.section === "/services");
   assert.equal(services?.pages, 2);
+});
+
+// --- robots.txt + sitemap (crawl like a search engine) -----------------------
+
+test("parseRobotsTxt keeps only the * group's rules, sitemaps are global", () => {
+  const rules = parseRobotsTxt(
+    [
+      "User-agent: Googlebot",
+      "Disallow: /google-only/",
+      "",
+      "User-agent: *",
+      "Disallow: /admin/ # comment",
+      "Allow: /admin/public/",
+      "",
+      "Sitemap: https://biz.example/sitemap.xml",
+    ].join("\n"),
+  );
+  assert.deepEqual(rules.disallow, ["/admin/"]);
+  assert.deepEqual(rules.allow, ["/admin/public/"]);
+  assert.deepEqual(rules.sitemaps, ["https://biz.example/sitemap.xml"]);
+});
+
+test("robotsAllows: longest match wins, wildcards and anchors work", () => {
+  const rules = { disallow: ["/admin/", "/*.pdf$", "/search"], allow: ["/admin/public/"], sitemaps: [] };
+  assert.equal(robotsAllows(rules, "/menu"), true);
+  assert.equal(robotsAllows(rules, "/admin/settings"), false);
+  assert.equal(robotsAllows(rules, "/admin/public/page"), true); // allow outranks by length
+  assert.equal(robotsAllows(rules, "/files/doc.pdf"), false);
+  assert.equal(robotsAllows(rules, "/search?q=x"), false);
+});
+
+test("crawlSite respects robots.txt and reports what it skipped", async () => {
+  const root = "https://biz.example/";
+  const pages: Record<string, PageRead> = {
+    [root]: page(root, { links: ["https://biz.example/admin/panel", "https://biz.example/menu"] }),
+    "https://biz.example/menu": page("https://biz.example/menu"),
+    "https://biz.example/admin/panel": page("https://biz.example/admin/panel"),
+  };
+  const site = await crawlSite({
+    reader: fakeReader(pages),
+    startUrl: root,
+    signal: new AbortController().signal,
+    fetchText: async (url) => (url.endsWith("/robots.txt") ? "User-agent: *\nDisallow: /admin/" : null),
+  });
+  assert.equal(site.robotsTxtFound, true);
+  assert.equal(site.pageCount, 2); // root + /menu — /admin/panel never fetched
+  assert.ok(!site.pages.some((p) => p.url.includes("/admin/")));
+  assert.ok(site.warnings.some((w) => w.includes("robots.txt")));
+});
+
+test("sitemap seeding crawls orphan pages nothing links to", async () => {
+  const root = "https://biz.example/";
+  const pages: Record<string, PageRead> = {
+    [root]: page(root, { links: [] }), // no outbound links at all
+    "https://biz.example/hidden-lp": page("https://biz.example/hidden-lp"),
+  };
+  const site = await crawlSite({
+    reader: fakeReader(pages),
+    startUrl: root,
+    signal: new AbortController().signal,
+    fetchText: async (url) =>
+      url.endsWith("/sitemap.xml")
+        ? "<urlset><url><loc> https://biz.example/hidden-lp </loc></url><url><loc>https://other.example/x</loc></url></urlset>"
+        : null,
+  });
+  assert.equal(site.sitemapFound, true);
+  assert.equal(site.pageCount, 2); // root + the orphan; off-site loc ignored
+  assert.ok(site.pages.some((p) => p.url === "https://biz.example/hidden-lp"));
+});
+
+test("parseSitemapXml: sitemapindex yields children, urlset yields urls", () => {
+  const index = parseSitemapXml('<sitemapindex><sitemap><loc>https://biz.example/pages.xml</loc></sitemap></sitemapindex>');
+  assert.deepEqual(index.childSitemaps, ["https://biz.example/pages.xml"]);
+  assert.deepEqual(index.urls, []);
+  const urlset = parseSitemapXml("<urlset><url><loc>https://biz.example/a</loc></url></urlset>");
+  assert.deepEqual(urlset.urls, ["https://biz.example/a"]);
 });
 
 test("crawlSite respects the page cap and reports truncation", async () => {
@@ -186,6 +273,66 @@ test("serializeScan trims crawl pages until the payload fits the cap", () => {
   assert.equal(parsed.site!.pageCount, 300); // the true crawl count survives the trim
 });
 
+// --- deterministic scoring (step 4 — explainable, never AI-assigned) ---------
+
+function fakeSite(over: Partial<ScanSite> = {}): ScanSite {
+  return {
+    origin: "https://biz.example",
+    startUrl: "https://biz.example/",
+    pageCount: 2,
+    crawledMs: 100,
+    truncated: false,
+    pages: [page("https://biz.example/"), page("https://biz.example/about")],
+    silo: [],
+    robotsTxtFound: true,
+    sitemapFound: true,
+    tech: [],
+    warnings: [],
+    ...over,
+  };
+}
+
+test("scoreSeo rewards full on-page coverage, penalizes the gaps with reasons", () => {
+  const good = scoreSeo(fakeSite());
+  assert.ok(good.score >= 85, `expected high, got ${good.score}`);
+
+  const bad = scoreSeo(
+    fakeSite({
+      sitemapFound: false,
+      robotsTxtFound: false,
+      pages: [page("https://biz.example/", { title: undefined, description: undefined, h1: undefined, hasCanonical: false, hasJsonLd: false })],
+    }),
+  );
+  assert.ok(bad.score <= 15, `expected low, got ${bad.score}`);
+  assert.ok(bad.reasons.some((r) => r.includes("meta description")));
+  assert.ok(bad.reasons.some((r) => r.includes("no structured data")));
+});
+
+test("scoreContent flags thin content; scoreUx flags broken/non-mobile pages", () => {
+  const thin = scoreContent(fakeSite({ pages: [page("https://biz.example/", { wordCount: 24, images: 9, imagesWithoutAlt: 8, ogTitle: undefined })] }));
+  assert.ok(thin.score < 45, `expected low content score, got ${thin.score}`);
+  assert.ok(thin.reasons.some((r) => r.includes("avg 24 words")));
+
+  const ux = scoreUx(
+    fakeSite({
+      pages: [page("https://biz.example/"), page("https://biz.example/broken", { status: 404, hasViewport: false })],
+    }),
+  );
+  assert.ok(ux.reasons.some((r) => r.includes("broken")));
+  assert.ok(ux.score < 90);
+});
+
+test("scoreListing passes Moz through; business health averages what exists", () => {
+  const listing = scoreListing({ fetched: true, score: 26, directoriesChecked: 19, directoriesFound: 13 });
+  assert.equal(listing?.score, 26);
+  assert.ok(listing?.reasons.some((r) => r.includes("13/19")));
+  assert.equal(scoreListing({ fetched: false }), null); // unknown ≠ zero
+
+  const business = scoreBusinessHealth({ seo: 40, content: 20, listing: 26 });
+  assert.equal(business?.score, 29);
+  assert.equal(scoreBusinessHealth({}), null);
+});
+
 // --- the job ----------------------------------------------------------------
 
 const LISTING: RawListing = {
@@ -257,7 +404,7 @@ function makeDeps(over: Partial<QualifyRunnerDeps> = {}): { deps: QualifyRunnerD
       raw: { sources: [{ source: "Google", status: "Correct" }, { source: "Yelp", status: "Not Found" }] },
       parsed: { directories: [{ source: "Google", status: "Correct" }, { source: "Yelp", status: "Not Found" }], checked: 2, found: 1, score: 50 },
     }),
-    probe: async () => 200,
+    fetchText: async () => null,
     onLog: noLog,
     now: () => "2026-07-13T00:00:00.000Z",
     ...over,

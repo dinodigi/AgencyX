@@ -258,3 +258,141 @@ export interface QualificationScan {
   moz?: ScanMoz;
   warnings: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Deterministic scoring (build-order step 4) — every sub-score is computed
+// from concrete scan signals with human-readable reasons, so a score is always
+// explainable ("why 42?"). The AI writes narrative ON TOP of these numbers;
+// it never assigns them. Weights are product decisions — tune here.
+// ---------------------------------------------------------------------------
+
+export interface ScoreDetail {
+  /** 0–100. */
+  score: number;
+  /** The concrete signals that produced the number, for display + the AI brief. */
+  reasons: string[];
+}
+
+const clamp = (n: number): number => Math.max(0, Math.min(100, Math.round(n)));
+const pct = (part: number, whole: number): number => (whole > 0 ? part / whole : 0);
+
+/** On-page/technical SEO health of the crawled site. */
+export function scoreSeo(site: ScanSite): ScoreDetail {
+  const pages = site.pages.filter((p) => p.status < 400);
+  const n = pages.length;
+  if (n === 0) return { score: 0, reasons: ["no crawlable pages"] };
+  const reasons: string[] = [];
+  const titles = pct(pages.filter((p) => p.title).length, n);
+  const descs = pct(pages.filter((p) => p.description).length, n);
+  const h1s = pct(pages.filter((p) => p.h1).length, n);
+  const canonicals = pct(pages.filter((p) => p.hasCanonical).length, n);
+  const jsonLd = site.pages.some((p) => p.hasJsonLd);
+
+  reasons.push(`${Math.round(titles * 100)}% of pages have a <title>`);
+  reasons.push(`${Math.round(descs * 100)}% have a meta description`);
+  reasons.push(`${Math.round(h1s * 100)}% have an h1`);
+  if (!jsonLd) reasons.push("no structured data (JSON-LD)");
+  if (!site.sitemapFound) reasons.push("no sitemap.xml");
+  if (!site.robotsTxtFound) reasons.push("no robots.txt");
+
+  const score = titles * 20 + descs * 20 + h1s * 15 + canonicals * 10 + (jsonLd ? 15 : 0) + (site.sitemapFound ? 12 : 0) + (site.robotsTxtFound ? 8 : 0);
+  return { score: clamp(score), reasons };
+}
+
+/** Content depth/quality signals of the crawled site. */
+export function scoreContent(site: ScanSite): ScoreDetail {
+  const pages = site.pages.filter((p) => p.status < 400);
+  const n = pages.length;
+  if (n === 0) return { score: 0, reasons: ["no crawlable pages"] };
+  const reasons: string[] = [];
+  const avgWords = pages.reduce((s, p) => s + p.wordCount, 0) / n;
+  const thinRatio = pct(pages.filter((p) => p.wordCount < 150).length, n);
+  const totalImages = pages.reduce((s, p) => s + p.images, 0);
+  const missingAlt = pages.reduce((s, p) => s + p.imagesWithoutAlt, 0);
+  const altCoverage = totalImages > 0 ? 1 - missingAlt / totalImages : 1;
+  const ogCoverage = pct(pages.filter((p) => p.ogTitle).length, n);
+
+  const wordScore = avgWords >= 800 ? 40 : avgWords >= 400 ? 30 : avgWords >= 200 ? 18 : 8;
+  reasons.push(`avg ${Math.round(avgWords)} words/page`);
+  if (thinRatio > 0) reasons.push(`${Math.round(thinRatio * 100)}% of pages are thin (<150 words)`);
+  if (totalImages > 0) reasons.push(`${Math.round(altCoverage * 100)}% of images have alt text`);
+  if (ogCoverage < 0.5) reasons.push("most pages missing Open Graph tags");
+
+  const score = wordScore + (1 - thinRatio) * 25 + altCoverage * 20 + ogCoverage * 15;
+  return { score: clamp(score), reasons };
+}
+
+/** UX/technical hygiene signals of the crawled site. */
+export function scoreUx(site: ScanSite): ScoreDetail {
+  const n = site.pages.length;
+  if (n === 0) return { score: 0, reasons: ["no crawlable pages"] };
+  const reasons: string[] = [];
+  const ok = site.pages.filter((p) => p.status < 400);
+  const brokenRatio = pct(n - ok.length, n);
+  const viewport = pct(ok.filter((p) => p.hasViewport).length, Math.max(1, ok.length));
+  const withH2 = pct(ok.filter((p) => p.h2Count > 0).length, Math.max(1, ok.length));
+  const avgInternal = ok.length > 0 ? ok.reduce((s, p) => s + p.internalLinks, 0) / ok.length : 0;
+
+  if (brokenRatio > 0) reasons.push(`${Math.round(brokenRatio * 100)}% of crawled pages are broken (4xx/5xx)`);
+  reasons.push(`${Math.round(viewport * 100)}% mobile-ready (viewport meta)`);
+  if (withH2 < 0.5) reasons.push("weak heading structure (few h2s)");
+  reasons.push(`~${Math.round(avgInternal)} internal links/page`);
+
+  const linkScore = avgInternal >= 5 ? 20 : avgInternal >= 2 ? 12 : 5;
+  const score = viewport * 35 + (1 - brokenRatio) * 30 + withH2 * 15 + linkScore;
+  return { score: clamp(score), reasons };
+}
+
+/** Listing health from the Moz audit (directory presence + NAP consistency). */
+export function scoreListing(moz: ScanMoz): ScoreDetail | null {
+  if (typeof moz.score === "number") {
+    const reasons: string[] = [];
+    if (typeof moz.directoriesChecked === "number" && typeof moz.directoriesFound === "number") {
+      reasons.push(`listed on ${moz.directoriesFound}/${moz.directoriesChecked} directories`);
+    }
+    reasons.push(`Moz listing accuracy ${moz.score}/100`);
+    return { score: clamp(moz.score), reasons };
+  }
+  return null; // audit not fetched — score unknown, not zero
+}
+
+/** The composite: mean of whichever sub-scores exist (absent ≠ zero). */
+export function scoreBusinessHealth(sub: {
+  seo?: number;
+  content?: number;
+  ux?: number;
+  performance?: number;
+  listing?: number;
+}): ScoreDetail | null {
+  const parts = Object.entries(sub).filter(([, v]) => typeof v === "number") as [string, number][];
+  if (parts.length === 0) return null;
+  const score = clamp(parts.reduce((s, [, v]) => s + v, 0) / parts.length);
+  return { score, reasons: [`mean of ${parts.map(([k, v]) => `${k} ${Math.round(v)}`).join(" · ")}`] };
+}
+
+// ---------------------------------------------------------------------------
+// The AI brief (build-order step 6) — brief_json contract, shaped by the
+// AgencyOS artifact's proven plan sections (seo / brand / proposal).
+// ---------------------------------------------------------------------------
+
+export interface QualificationBrief {
+  seo: {
+    executiveSummary: string;
+    audit: { strengths: string[]; weaknesses: string[]; technicalIssues: string[] };
+    keywordStrategy: string[];
+    siloRecommendation: string[];
+    roadmap: string[];
+  };
+  brand: {
+    essence: string;
+    voice: string;
+    visualDirection: string;
+    verifiedFacts: string[];
+  };
+  proposal: {
+    executiveSummary: string;
+    scope: string[];
+    outcomes: string[];
+    recommendedPackages: string[];
+  };
+}

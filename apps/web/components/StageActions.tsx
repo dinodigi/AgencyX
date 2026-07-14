@@ -22,8 +22,12 @@ const STAGE_COLORS: Record<string, string> = {
  *  (no waiting on a re-fetch); router.refresh() syncs the rest of the page, and
  *  a changed server prop (reload / live-sync) re-seeds it. Failures are always
  *  visible — a rejected move shows its reason, an unreachable action says to
- *  refresh — never a silent no-op. */
-export function StageActions({ leadId, stage }: { leadId: string; stage: string }) {
+ *  refresh — never a silent no-op.
+ *
+ *  `qualifyBlock`: safeguard reason why scraped→qualified is currently blocked
+ *  (research not run/reviewable). UI-disables the Advance button; the server
+ *  action enforces the same rule, so the gate holds even outside this UI. */
+export function StageActions({ leadId, stage, qualifyBlock }: { leadId: string; stage: string; qualifyBlock?: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -105,9 +109,18 @@ export function StageActions({ leadId, stage }: { leadId: string; stage: string 
           </button>
         )}
         {next ? (
-          <button type="button" onClick={() => move(next)} disabled={pending} className="btn-primary px-4 py-2 text-sm">
-            {pending ? "Moving…" : `Advance to ${next} →`}
-          </button>
+          next === "qualified" && qualifyBlock ? (
+            <span className="flex items-center gap-2">
+              <button type="button" disabled title={qualifyBlock} className="btn-primary cursor-not-allowed px-4 py-2 text-sm opacity-40">
+                Advance to qualified →
+              </button>
+              <span className="text-sm text-[var(--color-stage-building)]">{qualifyBlock}</span>
+            </span>
+          ) : (
+            <button type="button" onClick={() => move(next)} disabled={pending} className="btn-primary px-4 py-2 text-sm">
+              {pending ? "Moving…" : `Advance to ${next} →`}
+            </button>
+          )
         ) : (
           <span className="text-sm text-[var(--color-stage-client)]">Pipeline complete — this lead is a client.</span>
         )}

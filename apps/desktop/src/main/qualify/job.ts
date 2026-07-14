@@ -56,8 +56,8 @@ export interface QualifyRunnerDeps {
   makeReader: () => Promise<{ reader: PageReader; close: () => Promise<void> }>;
   /** Moz sub-job; undefined skips it (e.g. no browser available). */
   runMoz?: (input: MozInput, signal: AbortSignal) => Promise<MozRunResult>;
-  /** robots.txt / sitemap.xml probe. */
-  probe: (url: string) => Promise<number | null>;
+  /** Plain-text fetch for robots.txt / sitemaps — null on any failure. */
+  fetchText: (url: string) => Promise<string | null>;
   onLog: (level: "info" | "warn" | "error", message: string) => void;
   now: () => string;
   maxPages?: number;
@@ -131,7 +131,7 @@ export class QualifyRunner {
             signal,
             maxPages: this.deps.maxPages,
             maxMs: this.deps.maxCrawlMs,
-            probe: this.deps.probe,
+            fetchText: this.deps.fetchText,
             onProgress: (done, queued, url) => {
               if (done % 5 === 0) log("info", `crawl — ${done} pages read (${queued} queued) · ${url.slice(0, 60)}`);
             },

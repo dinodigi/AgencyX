@@ -5,9 +5,12 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, Card, EmptyState, NotConfigured, StageBadge } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { StageActions } from "@/components/StageActions.tsx";
-import { QualifyActions } from "@/components/QualifyActions.tsx";
+import { QualificationPanel } from "@/components/QualificationPanel.tsx";
 import { DeleteLeadButton } from "@/components/DeleteLeadButton.tsx";
 import { LiveRefresh } from "@/components/LiveRefresh.tsx";
+
+/** Qualification states whose research is reviewable (mirrors the server action). */
+const REVIEWABLE = ["collected", "scored", "briefed"];
 
 export const dynamic = "force-dynamic";
 
@@ -57,8 +60,20 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       <div className="p-8 flex flex-col gap-6 max-w-5xl">
         <Card className="p-6">
           <h2 className="mb-4 text-sm font-semibold text-[var(--color-muted)]">Pipeline</h2>
-          <StageActions leadId={lead.id} stage={lead.stage ?? "scraped"} />
+          <StageActions
+            leadId={lead.id}
+            stage={lead.stage ?? "scraped"}
+            qualifyBlock={
+              qual && REVIEWABLE.includes(qual.status ?? "")
+                ? undefined
+                : qual
+                  ? `Research is ${qual.status ?? "pending"} — reviewable results are required first.`
+                  : "Run qualification research first."
+            }
+          />
         </Card>
+
+        <QualificationPanel qual={qual} leadId={lead.id} />
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <Section title="Contact & location">
@@ -88,28 +103,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <Field label="Photos" value={lead.photo_count ?? 0} />
           </Section>
 
-          <Section title="Qualification">
-            <Field
-              label="Research job"
-              value={
-                qual ? (
-                  <span className="capitalize">{qual.status ?? "pending"}</span>
-                ) : (
-                  <span className="text-[var(--color-muted)]">not queued</span>
-                )
-              }
-            />
-            {qual?.page_count !== undefined && <Field label="Pages crawled" value={qual.page_count} />}
-            {qual?.collected_at && <Field label="Signals collected" value={new Date(qual.collected_at).toLocaleString()} />}
-            <div className="pt-1">
-              <QualifyActions leadId={lead.id} status={qual?.status} />
-            </div>
-          </Section>
-
           <Section title="Signals & scores">
             <Field label="Has website" value={lead.has_website ? "yes" : "no"} />
-            <Field label="Listing health" value={lead.listing_health_score ?? "— (Phase 2)"} />
-            <Field label="Qualification" value={lead.qualification_score ?? "— (Phase 3)"} />
+            <Field label="Listing health" value={lead.listing_health_score ?? "—"} />
+            <Field label="Qualification" value={lead.qualification_score ?? "—"} />
           </Section>
 
           <Section title="Source">

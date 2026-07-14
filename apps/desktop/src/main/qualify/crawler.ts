@@ -31,13 +31,86 @@ export interface CrawlOptions {
   maxPages?: number;
   /** Hard wall-clock cap in ms. */
   maxMs?: number;
-  /** HEAD-ish probe for robots.txt / sitemap.xml — returns HTTP status or null. */
-  probe?: (url: string) => Promise<number | null>;
+  /** Plain-text fetch for robots.txt / sitemaps — null on any failure. */
+  fetchText?: (url: string) => Promise<string | null>;
   onProgress?: (done: number, queued: number, url: string) => void;
 }
 
 const DEFAULT_MAX_PAGES = 30;
 const DEFAULT_MAX_MS = 120_000;
+const MAX_SITEMAP_DOCS = 4;
+
+// ---------------------------------------------------------------------------
+// robots.txt + sitemap — crawl the way a search engine does: seed from the
+// sitemap (so orphan pages are still found) and never fetch a path the site's
+// robots rules disallow for anonymous crawlers (`User-agent: *`).
+// ---------------------------------------------------------------------------
+
+export interface RobotsRules {
+  disallow: string[];
+  allow: string[];
+  sitemaps: string[];
+}
+
+/** Parse robots.txt keeping only the `User-agent: *` group's rules (that's us). */
+export function parseRobotsTxt(text: string): RobotsRules {
+  const rules: RobotsRules = { disallow: [], allow: [], sitemaps: [] };
+  let inStarGroup = false;
+  let lastWasUserAgent = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*$/, "").trim();
+    if (!line) continue;
+    const [rawKey, ...rest] = line.split(":");
+    const key = rawKey?.trim().toLowerCase();
+    const value = rest.join(":").trim();
+    if (key === "user-agent") {
+      // Consecutive user-agent lines share the following rule block.
+      if (!lastWasUserAgent) inStarGroup = false;
+      if (value === "*") inStarGroup = true;
+      lastWasUserAgent = true;
+      continue;
+    }
+    lastWasUserAgent = false;
+    if (key === "sitemap" && value) {
+      rules.sitemaps.push(value);
+    } else if (inStarGroup && key === "disallow" && value) {
+      rules.disallow.push(value);
+    } else if (inStarGroup && key === "allow" && value) {
+      rules.allow.push(value);
+    }
+  }
+  return rules;
+}
+
+/** Robots pattern → regex: `*` is a wildcard, a trailing `$` anchors the end. */
+function robotsPatternToRegex(pattern: string): RegExp {
+  const anchored = pattern.endsWith("$");
+  const body = (anchored ? pattern.slice(0, -1) : pattern)
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*");
+  return new RegExp(`^${body}${anchored ? "$" : ""}`);
+}
+
+/** Longest-match-wins between Allow and Disallow (Google semantics, simplified). */
+export function robotsAllows(rules: RobotsRules, pathWithQuery: string): boolean {
+  const longest = (patterns: string[]): number => {
+    let best = -1;
+    for (const p of patterns) {
+      if (robotsPatternToRegex(p).test(pathWithQuery)) best = Math.max(best, p.length);
+    }
+    return best;
+  };
+  const disallow = longest(rules.disallow);
+  if (disallow < 0) return true;
+  return longest(rules.allow) >= disallow;
+}
+
+/** Pull <loc> URLs out of a sitemap; a <sitemapindex> yields child sitemaps. */
+export function parseSitemapXml(xml: string): { urls: string[]; childSitemaps: string[] } {
+  const locs = [...xml.matchAll(/<loc>\s*([^<\s][^<]*?)\s*<\/loc>/gi)].map((m) => m[1]!.trim());
+  if (/<sitemapindex[\s>]/i.test(xml)) return { urls: [], childSitemaps: locs };
+  return { urls: locs, childSitemaps: [] };
+}
 
 /** File-ish or non-page URLs a crawl should never enqueue. */
 const SKIP_EXT = /\.(png|jpe?g|gif|webp|svg|ico|css|js|mjs|json|xml|txt|pdf|docx?|xlsx?|pptx?|zip|rar|mp[34]|webm|mov|avi|woff2?|ttf|eot)(\?|$)/i;
@@ -145,8 +218,60 @@ export async function crawlSite(opts: CrawlOptions): Promise<ScanSite> {
     };
   }
 
-  const queue: string[] = [start];
-  const seen = new Set<string>([start]);
+  // ── robots.txt first, like a search engine — rules gate every fetch ──────
+  const robotsText = (await opts.fetchText?.(origin + "/robots.txt")) ?? null;
+  const robotsTxtFound = robotsText !== null;
+  const rules = robotsText ? parseRobotsTxt(robotsText) : { disallow: [], allow: [], sitemaps: [] };
+  let robotsSkipped = 0;
+
+  const allowed = (url: string): boolean => {
+    try {
+      const u = new URL(url);
+      const ok = robotsAllows(rules, u.pathname + u.search);
+      if (!ok) robotsSkipped++;
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const queue: string[] = [];
+  const seen = new Set<string>();
+  const enqueue = (url: string | null): void => {
+    if (url && !seen.has(url) && allowed(url)) {
+      seen.add(url);
+      queue.push(url);
+    }
+  };
+  enqueue(start);
+
+  // ── sitemap seeding — orphan pages get crawled even if nothing links them ─
+  let sitemapFound = false;
+  if (opts.fetchText) {
+    const sitemapCandidates = [
+      ...rules.sitemaps.filter((s) => s.startsWith(origin)),
+      origin + "/sitemap.xml",
+    ];
+    const fetched = new Set<string>();
+    while (sitemapCandidates.length > 0 && fetched.size < MAX_SITEMAP_DOCS) {
+      if (opts.signal.aborted) break;
+      const sitemapUrl = sitemapCandidates.shift()!;
+      if (fetched.has(sitemapUrl)) continue;
+      fetched.add(sitemapUrl);
+      const xml = await opts.fetchText(sitemapUrl);
+      if (!xml) continue;
+      const { urls, childSitemaps } = parseSitemapXml(xml);
+      if (urls.length > 0 || childSitemaps.length > 0) sitemapFound = true;
+      for (const child of childSitemaps) {
+        if (child.startsWith(origin)) sitemapCandidates.push(child);
+      }
+      // Seed within reason — BFS still discovers the rest by links.
+      for (const url of urls.slice(0, maxPages * 3)) {
+        enqueue(normalizeCrawlUrl(url, origin));
+      }
+    }
+  }
+
   const pages: ScanPage[] = [];
   const htmlSamples: string[] = [];
   const generators: string[] = [];
@@ -173,22 +298,14 @@ export async function crawlSite(opts: CrawlOptions): Promise<ScanSite> {
     if (genMatch) generators.push(genMatch);
 
     for (const href of links) {
-      const normalized = normalizeCrawlUrl(href, origin);
-      if (normalized && !seen.has(normalized)) {
-        seen.add(normalized);
-        queue.push(normalized);
-      }
+      enqueue(normalizeCrawlUrl(href, origin));
     }
     opts.onProgress?.(pages.length, queue.length, url);
   }
   if (queue.length > 0) truncated = true;
 
-  const [robotsStatus, sitemapStatus] = await Promise.all([
-    opts.probe?.(origin + "/robots.txt") ?? Promise.resolve(null),
-    opts.probe?.(origin + "/sitemap.xml") ?? Promise.resolve(null),
-  ]);
-  const robotsTxtFound = robotsStatus !== null && robotsStatus >= 200 && robotsStatus < 300;
-  const sitemapFound = sitemapStatus !== null && sitemapStatus >= 200 && sitemapStatus < 300;
+  const warnings = siteWarnings(pages, sitemapFound);
+  if (robotsSkipped > 0) warnings.push(`${robotsSkipped} URLs skipped per robots.txt`);
 
   return {
     origin,
@@ -201,6 +318,6 @@ export async function crawlSite(opts: CrawlOptions): Promise<ScanSite> {
     robotsTxtFound,
     sitemapFound,
     tech: detectTech(htmlSamples, generators),
-    warnings: siteWarnings(pages, sitemapFound),
+    warnings,
   };
 }

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@clerk/nextjs": "^6.9.6",
     "@dinosales/agentx-client": "workspace:*",
     "@dinosales/types": "workspace:*",

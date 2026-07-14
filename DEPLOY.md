@@ -15,6 +15,8 @@ The blueprint is [`render.yaml`](render.yaml) (a `lead-engine-web` Node web serv
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    - `CLERK_SECRET_KEY`
    - `ANTHROPIC_API_KEY` — Claude API key for qualification AI briefs; also goes in `apps/web/.env.local` for local dev (gitignored)
+
+   Optional: `PAGESPEED_API_KEY` (free, Google Cloud console → PageSpeed Insights API) — without it performance scoring works keyless at low volume and simply reports "unknown" when Google's quota bites.
 3. Apply. Render builds (`pnpm install` + `pnpm --filter @dinosales/web build`) and starts (`next start`), health-checking `/api/health`.
 
 After that, every push to `main` auto-deploys (`autoDeploy: true`).

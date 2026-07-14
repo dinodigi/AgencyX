@@ -5,6 +5,10 @@ import { AgentXError } from "@dinosales/agentx-client";
 import { makeQueryDedupKey, makeQualificationDedupKey } from "@dinosales/types";
 import type { NormalizedSearch } from "@dinosales/ui/search";
 import { withClient } from "@/lib/agentx.ts";
+import { computeScores, fetchPerformanceScore, generateBriefJson, parseScan } from "@/lib/qualify.ts";
+
+/** Qualification states whose research results are reviewable. */
+const REVIEWABLE = ["collected", "scored", "briefed"];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -206,13 +210,32 @@ export interface StageResult {
 
 /** Move a lead to another pipeline stage — forward or back one step. AgentX's
  *  workflow enforces that only a declared transition is allowed (both directions
- *  are declared; skipping stages is still rejected). */
+ *  are declared; skipping stages is still rejected). App-layer safeguard on top:
+ *  a lead can't become `qualified` until its qualification research has actually
+ *  run and its results are reviewable (the workflow can't express cross-collection
+ *  guards, so this gate lives here — the human surface). */
 export async function advanceStage(_prev: StageResult, formData: FormData): Promise<StageResult> {
   const ctx = await withClient();
   if (!ctx) return { ok: false, error: "Not signed in." };
   const leadId = String(formData.get("leadId") ?? "");
   const toStage = String(formData.get("toStage") ?? "");
   if (!leadId || !toStage) return { ok: false, error: "Missing lead or stage." };
+
+  if (toStage === "qualified") {
+    try {
+      const qual = (await ctx.ax.qualifications.list({ filter: { lead: leadId }, limit: 1 }))[0];
+      if (!qual || !REVIEWABLE.includes(qual.status ?? "")) {
+        return {
+          ok: false,
+          error: qual
+            ? `Qualification is still ${qual.status ?? "pending"} — the research must finish before this lead can be qualified.`
+            : "Run qualification first — a lead is only qualified once its research results are reviewable.",
+        };
+      }
+    } catch (e) {
+      return { ok: false, error: `Couldn't verify the qualification: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  }
 
   try {
     await ctx.client.update("leads", leadId, { stage: toStage });
@@ -222,4 +245,89 @@ export async function advanceStage(_prev: StageResult, formData: FormData): Prom
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/leads");
   return { ok: true, stage: toStage };
+}
+
+export interface BriefResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Manual trigger (tokens cost — never automatic): deterministic scoring +
+ * PageSpeed, then one Claude pass for the brief. Re-runnable — scores are
+ * recomputed and the brief regenerated on every click.
+ * Status flow: collected → scored (after the numbers) → briefed (after Claude).
+ */
+export async function scoreAndBrief(_prev: BriefResult, formData: FormData): Promise<BriefResult> {
+  const ctx = await withClient();
+  if (!ctx) return { ok: false, error: "Not signed in." };
+  const qualId = String(formData.get("qualId") ?? "");
+  const leadId = String(formData.get("leadId") ?? "");
+  if (!qualId || !leadId) return { ok: false, error: "Missing qualification or lead." };
+  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: "ANTHROPIC_API_KEY is not configured on the server." };
+
+  try {
+    const qual = await ctx.ax.qualifications.get(qualId);
+    if (!REVIEWABLE.includes(qual.status ?? "")) {
+      return { ok: false, error: `Signals aren't collected yet (status: ${qual.status ?? "pending"}) — run the desktop job first.` };
+    }
+    const scan = parseScan(qual.scan_json);
+    if (!scan) return { ok: false, error: "No usable scan data on this qualification — re-run collection." };
+    const lead = await ctx.ax.leads.get(leadId);
+
+    // 1 · deterministic scores (+ PageSpeed for performance)
+    const performance = qual.website_url ? await fetchPerformanceScore(qual.website_url) : null;
+    const scores = computeScores(scan, performance);
+    const scorePatch: Record<string, unknown> = {};
+    if (scores.seo) scorePatch.seo_score = scores.seo.score;
+    if (scores.content) scorePatch.content_score = scores.content.score;
+    if (scores.ux) scorePatch.ux_score = scores.ux.score;
+    if (scores.performance) scorePatch.performance_score = scores.performance.score;
+    if (scores.listing) scorePatch.listing_score = scores.listing.score;
+    if (scores.business) scorePatch.business_health_score = scores.business.score;
+    await ctx.client.update("qualifications", qualId, {
+      ...(qual.status === "collected" ? { status: "scored" } : {}),
+      ...scorePatch,
+    });
+
+    // 2 · the brief (grounded in the agency's actual catalog)
+    const catalog = await ctx.ax.packages
+      .list({ filter: { active: true }, limit: 50 })
+      .then((rows) => rows.map((p) => ({ name: p.name, summary: p.summary, price: p.price, billing: p.billing })))
+      .catch(() => []);
+    const { brief, model } = await generateBriefJson({
+      leadName: lead.business_name,
+      category: lead.category,
+      address: lead.address,
+      phone: lead.phone,
+      websiteUrl: qual.website_url ?? lead.website,
+      rating: scan.listing?.rating ?? lead.rating,
+      reviewCount: scan.listing?.reviewCount ?? lead.review_count,
+      claimed: scan.listing?.claimed ?? lead.claimed,
+      scan,
+      scores,
+      catalog,
+    });
+    await ctx.client.update("qualifications", qualId, {
+      ...(qual.status !== "briefed" ? { status: "briefed" } : {}),
+      brief_json: JSON.stringify(brief),
+      model,
+      briefed_at: new Date().toISOString(),
+    });
+
+    // 3 · mirror the headline numbers onto the lead (equality-filterable lists)
+    const leadPatch: Record<string, unknown> = {};
+    if (scores.business) leadPatch.qualification_score = scores.business.score;
+    if (scores.listing) leadPatch.listing_health_score = scores.listing.score;
+    if (Object.keys(leadPatch).length > 0) await ctx.client.update("leads", leadId, leadPatch);
+
+    revalidatePath(`/leads/${leadId}`);
+    return {
+      ok: true,
+      message: `Business health ${scores.business?.score ?? "—"}/100 · brief generated${performance ? "" : " (performance unavailable)"}.`,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }

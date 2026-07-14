@@ -123,10 +123,26 @@ Scores are deterministic (explainable); the AI writes the narrative on top.
    address → skip with a warning). **TODO: live tuning pass on a real machine
    — the Maps lookup match and the Moz iframe labels — same §12.5 pattern the
    scraper needed.**
-4. **Scoring + performance** — ◀ next: PageSpeed + deterministic sub-scores → business health.
-5. **Qualification workspace** — phase-switching lead view (scores, silo, on-page
-   issues, Moz results, live progress).
-6. **AI brief** — Claude server-side, structured `brief_json`, on demand.
+4. **Scoring + performance** — ✅ built (2026-07-13): deterministic sub-scores —
+   seo/content/ux from the crawl signals, listing from Moz — plus PageSpeed
+   performance (keyless works at low volume, returns "unknown" on quota; set
+   `PAGESPEED_API_KEY` for reliability) → business-health composite, mirrored
+   onto the lead (`qualification_score`, `listing_health_score`). Every score
+   carries human-readable reasons. Verified against the live Tribute Hollywood
+   scan: seo 63 · content 12 · ux 79 · listing 26 → **business 45/100**.
+5. **Qualification workspace (v1)** — ✅ built: the lead page carries a research
+   panel — score tiles, crawl table, silo, on-page warnings, Moz results, live
+   status — plus the **safeguard**: `scraped→qualified` is blocked (UI and
+   server action) until the research results are reviewable
+   (collected/scored/briefed). The crawler now behaves like a search engine:
+   robots.txt-compliant (`User-agent: *` rules honored, skips reported) and
+   sitemap-seeded (orphan pages get crawled).
+6. **AI brief** — ✅ built: manual **"Score + generate AI brief"** on the lead
+   page (never automatic — tokens cost). One `claude-opus-4-8` pass with
+   structured output produces `brief_json` (seo/brand/proposal), grounded in
+   the deterministic scores and the agency's actual packages catalog;
+   re-runnable. `collected→scored→briefed` drives the workflow. **Owed: the
+   first live click** (needs `ANTHROPIC_API_KEY`, already staged).
 
 ---
 
