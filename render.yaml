@@ -25,3 +25,6 @@ services:
         sync: false
       - key: CLERK_SECRET_KEY
         sync: false
+      # Claude API for qualification AI briefs (step 6) — set in dashboard, never in git.
+      - key: ANTHROPIC_API_KEY
+        sync: false
