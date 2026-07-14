@@ -1,0 +1,123 @@
+# AgencyX — Post-Deploy Roadmap
+
+> **Repo note:** this project's folder is `C:\dev\DinoSales`; its product name is
+> **AgencyX** (GitHub `dinodigi/AgencyX`). **AgencyOS** (`agency-os-*.onrender.com`)
+> is a **separate, unrelated** prior system — the `artifact.json` sample came from
+> it and is reference-only. Nothing here touches AgencyOS.
+
+Hosted (rendered) version, kept in sync:
+<https://claude.ai/code/artifact/57cc48c7-b4f0-49d3-bb9e-c19dde3df3c3>
+
+What we build **after** the management pipeline shipped. Two workstreams turn it
+from "runs" into "runs well": a scraper rebuilt on stable anchors (done), then the
+qualification phase that researches a lead and drafts its brief (next).
+
+---
+
+## Where we are — already live
+
+Scrape → pipeline · unified search + batch · speed profiles · desktop auto-run ·
+live sync (poll + SSE) · agency profile + logo · services + packages catalog ·
+stage advance/reverse.
+
+---
+
+## Workstream 1 — Phase-1 scraper rebuild ✅ SHIPPED
+
+The shaky data (`Results` as a name, 0 reviews, 5.0 ratings) traced to one cause:
+we parsed Google's rotating CSS classes. A fresh-session recon settled the fix.
+
+- **No clean JSON endpoint on Google** — Maps internals are opaque protobuf we
+  won't build on; we parse HTML off **stable anchors**.
+- **Stay on Maps, not Search.** A cold session on `google.com/search` (tbm=lcl /
+  the Knowledge Panel, where the cleaner selectors live) trips the `/sorry`
+  unusual-traffic block. Maps tolerates the anonymous sessions we run.
+- **Stable anchors:**
+  - `/g/…` Knowledge-Graph MID (from the Maps place href `!16s`) → dedup key.
+  - Name from the result link's `aria-label`; rating/reviews from "N stars" /
+    "N reviews" aria-labels; phone/website from `data-item-id`; name from `h1`.
+    **No CSS class touched.**
+- **Website** cleaned of `utm_*` tracking; **hours** captured as the full weekly
+  schedule (per-day, split shifts), expanding "See more hours" when collapsed —
+  after reading the core fields so the expand can't clobber the name.
+- Verified end-to-end through the production esbuild bundle; 15 desktop tests
+  green. Files: `apps/desktop/src/main/scraper/{selectors,google-source}.ts`.
+
+---
+
+## Workstream 2 — Qualification (`scraped → qualified`)  ◀ NEXT
+
+A deep-research job that turns a bare lead into a decision-ready dossier, then an
+AI drafts the brief. The lead page becomes phase-aware: at `qualified` the basic
+card swaps for the qualification workspace. Grounded in the real `scan → plan →
+build` artifact.
+
+### Where each step runs
+
+| Step | Collects | Runs |
+|---|---|---|
+| 1 · Deep re-scrape | Full listing detail (reuses the new stable selectors) | desktop |
+| 2 · Site crawl + SEO | Full crawl (bounded) → silo, on-page signals, tech | desktop |
+| 3 · Performance | Core Web Vitals / Lighthouse | PageSpeed API (server) |
+| 4 · Listing audit | Moz score + per-directory NAP consistency | desktop |
+| 5 · Scoring | Deterministic sub-scores → business health | web |
+| 6 · AI brief | Compiles signals into the structured brief | Claude (web) |
+
+### Moz listing audit — nailed down (verified 2026-07-13)
+
+Free tool is an **iframe** `#check-listing-iframe` → `moz.com/freemium/local/check-listing`.
+Fields: Company, Street, City, State, Zip · button "Check Now" (no phone).
+**Async:** poll `local.listing.reports.fetch.background` (~90s, retry on timeout);
+a durable `reportId` lands in the URL → submit now, fetch later. Parse the
+intercepted JSON, not the MUI table. Runs as a non-blocking sub-job. BrightLocal
+(the artifact was wired for it) stays the sanctioned path at volume.
+
+### The brief (AI output)
+
+One Claude pass, on demand, producing structured `brief_json`, shaped by the
+artifact's proven `plan`:
+- **seo** — score, audit, keyword strategy, silo, roadmap, redesign
+- **brand** — essence, voice, visual direction, verified facts
+- **proposal** — summary, scope, outcomes → linked to the packages catalog
+
+Scores are deterministic (explainable); the AI writes the narrative on top.
+
+### Schema
+
+- **`qualifications`** (new · 1:1 lead): `status` (workflow) · `website_url` ·
+  six score fields · `page_count` · JSON blobs `scan_json` / `brief_json` ·
+  `model`, `collected_at`, `briefed_at`. Kept separate so blobs don't bloat lead
+  reads.
+- **`listing_audits`** (exists · enrich): add `report_id`, `directories_json`
+  (per-source), `score`. Feeds the lead's `listing_health_score`.
+
+---
+
+## Build order
+
+1. **Rebuild phase-1 scraper** — ✅ shipped.
+2. **Qualification schema + client** — ◀ next: `qualifications` collection +
+   `listing_audits` enrichment, regen client, sync manifest.
+3. **Desktop qualification job** — deep re-scrape → full site crawl + on-page SEO
+   → Moz submit/fetch sub-job. Live progress, syncs signals up.
+4. **Scoring + performance** — PageSpeed + deterministic sub-scores → business health.
+5. **Qualification workspace** — phase-switching lead view (scores, silo, on-page
+   issues, Moz results, live progress).
+6. **AI brief** — Claude server-side, structured `brief_json`, on demand.
+
+---
+
+## Decisions locked
+
+- Scraper anchors: `/g/` id + Maps `aria-label` / `data-item-id`.
+- Crawl: full, with a page/time safety cap.
+- Scoring: deterministic + AI narrative.
+- Moz: free iframe tool, async sub-job.
+- AI: Claude, single server-side key, on demand.
+
+## Open / needed
+
+- **Rotate** the Anthropic key that was exposed in the `artifact.json`.
+- BrightLocal key — optional, for listing audit at scale.
+- Out of scope now: billing, BYO-per-tenant key (blocked by no encrypted field in
+  AgentX), Build / Propose phases.
