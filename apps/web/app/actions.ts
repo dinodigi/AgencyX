@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { AgentXError } from "@dinosales/agentx-client";
-import { makeQueryDedupKey } from "@dinosales/types";
+import { makeQueryDedupKey, makeQualificationDedupKey } from "@dinosales/types";
 import type { NormalizedSearch } from "@dinosales/ui/search";
 import { withClient } from "@/lib/agentx.ts";
 
@@ -154,6 +154,48 @@ export async function deleteLeads(ids: string[]): Promise<DeleteResult> {
   }
   revalidatePath("/leads");
   return { ok: true, deleted };
+}
+
+export interface QualifyQueueResult {
+  ok: boolean;
+  /** The qualification row's current status after the action. */
+  status?: string;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Queue the lead's deep-research qualification job. Idempotent (1:1 via
+ * dedup_key): a fresh lead gets a pending row the desktop claims; an existing
+ * failed row is bumped back to pending (the workflow's retry transition); any
+ * other status just reports where the job already is.
+ */
+export async function queueQualification(_prev: QualifyQueueResult, formData: FormData): Promise<QualifyQueueResult> {
+  const ctx = await withClient();
+  if (!ctx) return { ok: false, error: "Not signed in." };
+  const leadId = String(formData.get("leadId") ?? "");
+  if (!leadId) return { ok: false, error: "Missing lead." };
+
+  try {
+    const res = await ctx.client.upsertQualification({
+      org_id: ctx.session.orgId,
+      dedup_key: makeQualificationDedupKey(ctx.session.orgId, leadId),
+      lead: leadId,
+    });
+    if (!res.alreadySynced) {
+      revalidatePath(`/leads/${leadId}`);
+      return { ok: true, status: "pending", message: "Queued — the desktop collects it next time it's idle." };
+    }
+    const row = await ctx.ax.qualifications.get(res.id);
+    if (row.status === "failed") {
+      await ctx.client.update("qualifications", res.id, { status: "pending" });
+      revalidatePath(`/leads/${leadId}`);
+      return { ok: true, status: "pending", message: "Re-queued after a failure." };
+    }
+    return { ok: true, status: row.status, message: `Already ${row.status ?? "queued"}.` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export interface StageResult {

@@ -5,7 +5,7 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
-import type { AuthState, AutoRunState, QueueItem, SyncStats, RunLogLine, RunState, CapturedLead } from "../shared/ipc.ts";
+import type { AuthState, AutoRunState, QualItem, QualRunState, QueueItem, SyncStats, RunLogLine, RunState, CapturedLead } from "../shared/ipc.ts";
 import type { ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
 import type { NormalizedSearch } from "@dinosales/ui/search";
 
@@ -49,11 +49,19 @@ const api = {
     getState: (): Promise<AutoRunState> => ipcRenderer.invoke("autorun:getState"),
     setEnabled: (enabled: boolean): Promise<AutoRunState> => ipcRenderer.invoke("autorun:setEnabled", enabled),
   },
+  qualify: {
+    list: (): Promise<QualItem[]> => ipcRenderer.invoke("qualify:list"),
+    runNext: (): Promise<QualRunState> => ipcRenderer.invoke("qualify:runNext"),
+    stop: (): Promise<QualRunState> => ipcRenderer.invoke("qualify:stop"),
+    getState: (): Promise<QualRunState> => ipcRenderer.invoke("qualify:getState"),
+  },
   on: {
     authChanged: (cb: (s: AuthState) => void) => subscribe("auth:changed", cb),
     syncChanged: (cb: (s: SyncStats) => void) => subscribe("sync:changed", cb),
     queueChanged: (cb: (q: QueueItem[]) => void) => subscribe("queue:changed", cb),
     runChanged: (cb: (r: RunState) => void) => subscribe("run:changed", cb),
+    qualifyChanged: (cb: (q: QualRunState) => void) => subscribe("qualify:changed", cb),
+    qualifyQueue: (cb: (q: QualItem[]) => void) => subscribe("qualify:queue", cb),
     autorunChanged: (cb: (s: AutoRunState) => void) => subscribe("autorun:changed", cb),
     logLine: (cb: (l: RunLogLine) => void) => subscribe("log:line", cb),
     leadCaptured: (cb: (l: CapturedLead) => void) => subscribe("lead:captured", cb),

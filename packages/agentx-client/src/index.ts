@@ -18,6 +18,8 @@ import {
   type SearchQueries,
   type SearchQueriesUpdate,
   type DevicesUpdate,
+  type QualificationsCreate,
+  type QualificationsUpdate,
 } from "./generated.ts";
 
 const DEFAULT_BASE_URL = "https://pluggie.app/api/v1";
@@ -195,6 +197,60 @@ export function createLeadEngineClient(options: AgentXClientOptions) {
     async failQuery(queryId: string): Promise<void> {
       const patch: SearchQueriesUpdate = { status: "failed" };
       await raw("PATCH", `/search_queries/${encodeURIComponent(queryId)}`, undefined, patch);
+    },
+
+    // -- qualification protocol (same shapes as the search-queue protocol) ---
+
+    /**
+     * Create the lead's qualification row idempotently: the unique dedup_key
+     * ({orgId}:{leadId}) makes a duplicate create resolve to the existing row.
+     */
+    async upsertQualification(row: QualificationsCreate): Promise<SyncResult> {
+      try {
+        const { id } = await ax.qualifications.create(row);
+        return { id, alreadySynced: false };
+      } catch (err) {
+        if (!isUniqueConflict(err)) throw err;
+        const existing = await ax.qualifications.list({ filter: { dedup_key: row.dedup_key }, limit: 1 });
+        const found = existing[0];
+        if (!found) throw err;
+        return { id: found.id, alreadySynced: true };
+      }
+    },
+
+    /**
+     * Claim a pending qualification for this device — stamp + settle + verify
+     * (S2: the transition alone is not a lock; same-state writes are no-ops).
+     */
+    async claimQualification(qualId: string, deviceRowId: string, settleMs = 1200): Promise<ClaimResult> {
+      const current = await ax.qualifications.get(qualId);
+      if (current.status === "collecting") return { claimed: false, reason: "already-running" };
+      if (current.status !== "pending") return { claimed: false, reason: "not-pending" };
+      const patch: QualificationsUpdate = { status: "collecting", device: deviceRowId };
+      try {
+        await raw("PATCH", `/qualifications/${encodeURIComponent(qualId)}`, undefined, patch);
+      } catch (err) {
+        if (err instanceof AgentXError && err.code === "E_VALIDATION") return { claimed: false, reason: "lost-race" };
+        throw err;
+      }
+      await sleep(settleMs);
+      const settled = await ax.qualifications.get(qualId);
+      const won = settled.status === "collecting" && settled.device?.id === deviceRowId;
+      return won ? { claimed: true } : { claimed: false, reason: "lost-race" };
+    },
+
+    /** Signals are up — move collecting→collected with the scan payload in one write. */
+    async completeQualification(
+      qualId: string,
+      result: { scan_json: string; page_count?: number; website_url?: string; collected_at: string },
+    ): Promise<void> {
+      const patch: QualificationsUpdate = { status: "collected", ...result };
+      await raw("PATCH", `/qualifications/${encodeURIComponent(qualId)}`, undefined, patch);
+    },
+
+    async failQualification(qualId: string): Promise<void> {
+      const patch: QualificationsUpdate = { status: "failed" };
+      await raw("PATCH", `/qualifications/${encodeURIComponent(qualId)}`, undefined, patch);
     },
 
     // -- device presence -----------------------------------------------------

@@ -8,9 +8,9 @@
 
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import type { AuthState, AutoRunState, CapturedLead, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
-import type { RawListing, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
-import { toScrapeFilter, toScrapeSpeed, makeQueryDedupKey } from "@dinosales/types";
+import type { AuthState, AutoRunState, CapturedLead, QualItem, QualRunState, QueueItem, RunLogLine, RunState, SyncStats } from "../shared/ipc.ts";
+import type { QualificationStatus, RawListing, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
+import { toScrapeFilter, toScrapeSpeed, makeQueryDedupKey, SPEED_PROFILES, DEFAULT_SPEED, QUALIFICATION_STATUSES } from "@dinosales/types";
 import type { NormalizedSearch } from "@dinosales/ui/search";
 import { AgentXError } from "@dinosales/agentx-client";
 import { AuthManager, type SessionInput } from "./auth.ts";
@@ -24,6 +24,9 @@ import { GoogleMapsSource } from "./scraper/google-source.ts";
 import type { ScrapeSource } from "./scraper/types.ts";
 import { ensureRegistration, type Registration } from "./registration.ts";
 import { AutoRunController } from "./autorun.ts";
+import { QualifyRunner, type QualifyJobRow } from "./qualify/job.ts";
+import { PlaywrightPageReader } from "./qualify/page-reader.ts";
+import { MozAuditor } from "./qualify/moz.ts";
 
 // The delivery-scoped project token is baked at build time (public read/write
 // is still gated by the user JWT, so this is a project identifier, not a secret
@@ -38,6 +41,8 @@ let sync: SyncEngine;
 let deviceId = "";
 let runAbort: AbortController | null = null;
 let runState: RunState = { running: false, captured: 0 };
+let qualAbort: AbortController | null = null;
+let qualState: QualRunState = { running: false };
 let registration: Registration | null = null;
 let registeredOrgId: string | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -130,6 +135,11 @@ function registerIpc(): void {
 
   ipcMain.handle("search:queue", (_e, n: NormalizedSearch) => queueSearchOnDesktop(n));
 
+  ipcMain.handle("qualify:list", () => listQualQueue());
+  ipcMain.handle("qualify:runNext", () => qualifyNext());
+  ipcMain.handle("qualify:stop", () => stopQualify());
+  ipcMain.handle("qualify:getState", () => qualState);
+
   ipcMain.handle("autorun:getState", () => autorun?.state() ?? { enabled: true, ranThisHour: 0 });
   ipcMain.handle("autorun:setEnabled", (_e, enabled: boolean) => autorun?.setEnabled(enabled) ?? { enabled, ranThisHour: 0 });
 }
@@ -191,8 +201,9 @@ function startChangeFeed(): void {
   stopChangeFeed = client.ax.changes.stream(
     (c) => {
       if (c.collection === "search_queries") void listQueue();
+      if (c.collection === "qualifications") void listQualQueue();
     },
-    { collections: ["search_queries"] },
+    { collections: ["search_queries", "qualifications"] },
   );
   log("info", "live sync connected");
 }
@@ -359,8 +370,9 @@ async function startRun(args: {
     log("error", "cannot run: not signed in");
     return runState;
   }
-  if (runState.running) {
-    log("warn", "a run is already in progress");
+  const busy = busyReason();
+  if (busy) {
+    log("warn", `cannot start a run — ${busy}`);
     return runState;
   }
 
@@ -392,8 +404,9 @@ async function claimNextRun(): Promise<RunState> {
     log("error", "cannot run: not signed in");
     return runState;
   }
-  if (runState.running) {
-    log("warn", "a run is already in progress");
+  const busy = busyReason();
+  if (busy) {
+    log("warn", `cannot claim a run — ${busy}`);
     return runState;
   }
   if (!registration?.deviceRowId) {
@@ -492,6 +505,158 @@ async function listQueue(): Promise<QueueItem[]> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Qualification jobs (build-order step 3): the web queues a qualifications row
+// (pending); this device claims it and collects — deep listing re-scrape +
+// bounded site crawl + Moz audit — then lands collecting→collected. One
+// browser-driving job at a time, shared gate with scrape runs.
+// ---------------------------------------------------------------------------
+
+function setQualState(patch: Partial<QualRunState>): void {
+  qualState = { ...qualState, ...patch };
+  send("qualify:changed", qualState);
+}
+
+function busyReason(): string | null {
+  if (runState.running) return "a scrape run is in progress";
+  if (qualState.running) return "a qualification job is in progress";
+  return null;
+}
+
+async function listQualQueue(): Promise<QualItem[]> {
+  const client = auth.getClient();
+  if (!client) return [];
+  try {
+    const rows = await client.ax.qualifications.list({ limit: 100 });
+    const items: QualItem[] = rows.map((r) => ({
+      id: r.id,
+      leadName: r.lead.label,
+      status: (QUALIFICATION_STATUSES as readonly string[]).includes(r.status ?? "") ? (r.status as QualificationStatus) : "pending",
+      websiteUrl: r.website_url,
+      pageCount: r.page_count,
+      collectedAt: r.collected_at,
+    }));
+    send("qualify:queue", items);
+    return items;
+  } catch (err) {
+    log("warn", `qualification queue refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+function makeQualifyRunner(): QualifyRunner {
+  const client = auth.getClient()!;
+  return new QualifyRunner({
+    claim: (qualId, deviceRowId) => client.claimQualification(qualId, deviceRowId),
+    complete: (qualId, result) => client.completeQualification(qualId, result),
+    fail: (qualId) => client.failQualification(qualId),
+    writeAudit: async (audit) => {
+      await client.ax.listing_audits.create(audit);
+    },
+    lookupListing: async (job, signal) => {
+      const source = new GoogleMapsSource();
+      await source.open();
+      try {
+        return await source.lookup(job.leadName, job.address ?? "", {
+          signal,
+          profile: SPEED_PROFILES[DEFAULT_SPEED],
+          onLog: log,
+          targetPlaceId: job.placeId,
+        });
+      } finally {
+        await source.close().catch(() => {});
+      }
+    },
+    makeReader: async () => {
+      const reader = new PlaywrightPageReader();
+      await reader.open();
+      return { reader, close: () => reader.close() };
+    },
+    runMoz: (input, signal) => new MozAuditor().run(input, { signal, onLog: log }),
+    probe: async (url) => {
+      try {
+        const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(8000) });
+        return res.status;
+      } catch {
+        return null;
+      }
+    },
+    onLog: log,
+    now: () => new Date().toISOString(),
+  });
+}
+
+/** Claim the oldest pending qualification and run the collection job. */
+async function qualifyNext(): Promise<QualRunState> {
+  const state = auth.getState();
+  const client = auth.getClient();
+  if (state.status !== "signed-in" || !state.orgId || !client) {
+    log("error", "cannot qualify: not signed in");
+    return qualState;
+  }
+  const busy = busyReason();
+  if (busy) {
+    log("warn", `cannot start a qualification — ${busy}`);
+    return qualState;
+  }
+  if (!registration?.deviceRowId) {
+    log("error", "device not registered yet — cannot claim a qualification");
+    return qualState;
+  }
+
+  let job: QualifyJobRow | undefined;
+  try {
+    const rows = await client.ax.qualifications.list({ filter: { status: "pending" }, limit: 1 });
+    const row = rows[0];
+    if (row) {
+      // The job needs lead fallbacks (website/address/place id) — one extra read.
+      const lead = await client.ax.leads.get(row.lead.id);
+      job = {
+        qualId: row.id,
+        orgId: state.orgId,
+        leadId: lead.id,
+        leadName: lead.business_name,
+        website: lead.website,
+        address: lead.address,
+        placeId: lead.place_id,
+        agencyRowId: registration.agencyRowId,
+        deviceRowId: registration.deviceRowId,
+      };
+    }
+  } catch (err) {
+    log("error", `qualification queue read failed: ${err instanceof Error ? err.message : String(err)}`);
+    return qualState;
+  }
+  if (!job) {
+    log("info", "no pending qualifications to claim");
+    return qualState;
+  }
+
+  qualAbort = new AbortController();
+  setQualState({ running: true, leadName: job.leadName, lastOutcome: undefined });
+  void makeQualifyRunner()
+    .run(job, qualAbort.signal)
+    .then((outcome) => {
+      setQualState({ running: false, lastOutcome: outcome.kind });
+      void listQualQueue();
+      onRunFinished(outcome);
+    })
+    .catch((err) => {
+      log("error", `qualification crashed: ${err instanceof Error ? err.message : String(err)}`);
+      setQualState({ running: false, lastOutcome: "error" });
+    });
+
+  return qualState;
+}
+
+function stopQualify(): QualRunState {
+  if (qualAbort && qualState.running) {
+    qualAbort.abort();
+    log("info", "qualification stop requested");
+  }
+  return qualState;
+}
+
 app.whenReady().then(async () => {
   const userData = app.getPath("userData");
   deviceId = getOrCreateDeviceId(join(userData, "device-id"));
@@ -513,11 +678,14 @@ app.whenReady().then(async () => {
     onChange: (s: AutoRunState) => send("autorun:changed", s),
     log,
     // Only claim when signed in, device-registered, and nothing already running.
-    canClaim: () => auth.getState().status === "signed-in" && !!registration?.deviceRowId && !runState.running,
+    canClaim: () => auth.getState().status === "signed-in" && !!registration?.deviceRowId && busyReason() === null,
     claim: async () => {
-      if (runState.running) return false;
+      if (busyReason()) return false;
+      // Searches first (they feed the pipeline), then qualification jobs.
       await claimNextRun();
-      return runState.running; // set synchronously when a pending row was claimed
+      if (runState.running) return true;
+      await qualifyNext();
+      return qualState.running;
     },
   });
 

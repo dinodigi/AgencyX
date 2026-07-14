@@ -5,7 +5,7 @@
  * this in one shared file is what stops the two processes from drifting.
  */
 
-import type { LeadStage, QueryStatus, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
+import type { LeadStage, QualificationStatus, QueryStatus, ScrapeFilter, ScrapeSpeed, ScrapeDetailLevel } from "@dinosales/types";
 
 /** What the renderer is allowed to know about auth (never the raw token). */
 export interface AuthState {
@@ -34,6 +34,23 @@ export interface QueueItem {
   speed?: ScrapeSpeed;
   detailLevel?: ScrapeDetailLevel;
   queuedAt?: string;
+}
+
+/** One row of the qualification queue (deep-research jobs for leads). */
+export interface QualItem {
+  id: string;
+  leadName: string;
+  status: QualificationStatus;
+  websiteUrl?: string;
+  pageCount?: number;
+  collectedAt?: string;
+}
+
+/** Qualification run state — one collection job at a time, like scrape runs. */
+export interface QualRunState {
+  running: boolean;
+  leadName?: string;
+  lastOutcome?: string;
 }
 
 /** Desktop auto-run state — surfaced to the renderer for the on/off control. */
@@ -122,6 +139,12 @@ export interface IpcApi {
   "run:stop": () => RunState;
   "run:getState": () => RunState;
 
+  // Qualification jobs: list the queue, claim + run the next pending one.
+  "qualify:list": () => QualItem[];
+  "qualify:runNext": () => QualRunState;
+  "qualify:stop": () => QualRunState;
+  "qualify:getState": () => QualRunState;
+
   // Desktop auto-run: claim the next queued search whenever idle. On by default.
   "autorun:getState": () => AutoRunState;
   "autorun:setEnabled": (enabled: boolean) => AutoRunState;
@@ -135,6 +158,8 @@ export interface IpcEvents {
   "sync:changed": SyncStats;
   "queue:changed": QueueItem[];
   "run:changed": RunState;
+  "qualify:changed": QualRunState;
+  "qualify:queue": QualItem[];
   "autorun:changed": AutoRunState;
   "log:line": RunLogLine;
   "lead:captured": CapturedLead;

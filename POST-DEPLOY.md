@@ -112,9 +112,18 @@ Scores are deterministic (explainable); the AI writes the narrative on top.
 2. **Qualification schema + client** — ✅ shipped: `qualifications` collection
    live (workflow enforcement verified), `listing_audits` enriched, client
    regenerated, manifest synced + lint extended. Typecheck and 15 tests green.
-3. **Desktop qualification job** — ◀ next: deep re-scrape → full site crawl +
-   on-page SEO → Moz submit/fetch sub-job. Live progress, syncs signals up.
-4. **Scoring + performance** — PageSpeed + deterministic sub-scores → business health.
+3. **Desktop qualification job** — ✅ built (2026-07-13, 14 new tests · 29 green):
+   claim `pending→collecting` (stamp-settle-verify) → deep re-scrape (Maps
+   lookup on the stable anchors) → bounded same-origin crawl (30-page/120s
+   caps) with on-page signals + silo + tech detect → Moz submit/poll sub-job
+   (durable `reportId` → `listing_audits`) → `scan_json` lands
+   `collecting→collected`. The web queues jobs from the lead page ("Qualify
+   this lead"); desktop auto-run claims them once the search queue is idle;
+   every sub-step degrades gracefully (block → cool-down, no website / bad
+   address → skip with a warning). **TODO: live tuning pass on a real machine
+   — the Maps lookup match and the Moz iframe labels — same §12.5 pattern the
+   scraper needed.**
+4. **Scoring + performance** — ◀ next: PageSpeed + deterministic sub-scores → business health.
 5. **Qualification workspace** — phase-switching lead view (scores, silo, on-page
    issues, Moz results, live progress).
 6. **AI brief** — Claude server-side, structured `brief_json`, on demand.

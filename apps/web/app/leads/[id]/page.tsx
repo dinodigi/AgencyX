@@ -5,6 +5,7 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, Card, EmptyState, NotConfigured, StageBadge } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { StageActions } from "@/components/StageActions.tsx";
+import { QualifyActions } from "@/components/QualifyActions.tsx";
 import { DeleteLeadButton } from "@/components/DeleteLeadButton.tsx";
 import { LiveRefresh } from "@/components/LiveRefresh.tsx";
 
@@ -19,9 +20,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   const { id } = await params;
   let lead: Awaited<ReturnType<typeof ctx.ax.leads.get>> | null = null;
+  let qual: Awaited<ReturnType<typeof ctx.ax.qualifications.list>>[number] | null = null;
   let error: string | null = null;
   try {
     lead = await ctx.ax.leads.get(id);
+    qual = (await ctx.ax.qualifications.list({ filter: { lead: id }, limit: 1 }))[0] ?? null;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -39,7 +42,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <LiveRefresh watch={["leads"]} />
+      <LiveRefresh watch={["leads", "qualifications"]} />
       <PageHeader
         title={lead.business_name}
         subtitle={lead.category ?? undefined}
@@ -83,6 +86,24 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <Field label="Reviews" value={lead.review_count ?? 0} />
             <Field label="Review tier" value={lead.review_bucket} />
             <Field label="Photos" value={lead.photo_count ?? 0} />
+          </Section>
+
+          <Section title="Qualification">
+            <Field
+              label="Research job"
+              value={
+                qual ? (
+                  <span className="capitalize">{qual.status ?? "pending"}</span>
+                ) : (
+                  <span className="text-[var(--color-muted)]">not queued</span>
+                )
+              }
+            />
+            {qual?.page_count !== undefined && <Field label="Pages crawled" value={qual.page_count} />}
+            {qual?.collected_at && <Field label="Signals collected" value={new Date(qual.collected_at).toLocaleString()} />}
+            <div className="pt-1">
+              <QualifyActions leadId={lead.id} status={qual?.status} />
+            </div>
           </Section>
 
           <Section title="Signals & scores">

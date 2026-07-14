@@ -18,7 +18,7 @@
  * in Node (selectors.ts) so it's testable and out of the fragile evaluate body.
  */
 
-import type { RawListing } from "@dinosales/types";
+import type { RawListing, SpeedProfile } from "@dinosales/types";
 import type { ScrapeQuery, ScrapeSource, ScrapeSourceOptions } from "./types.ts";
 import { ScrapeBlockedError, SelectorMissError } from "./types.ts";
 import { actionDelay, betweenListingsDelay, scrollPause, randomUserAgent, randomViewport, sleep } from "./human.ts";
@@ -193,6 +193,70 @@ export class GoogleMapsSource implements ScrapeSource {
       await betweenListingsDelay(opts.signal, opts.profile);
     }
     opts.onLog("info", `done — ${done} businesses captured`);
+  }
+
+  /**
+   * Qualification deep re-scrape: find ONE business on Maps and read its full
+   * detail off the same stable anchors. Search `name + locationHint`, match the
+   * feed card by place id (MID/CID) — falling back to an exact name match, then
+   * the first card — and run the phase-2 detail read on it. Returns null when
+   * nothing matched; throws ScrapeBlockedError on /sorry / CAPTCHA.
+   */
+  async lookup(
+    businessName: string,
+    locationHint: string,
+    opts: { signal: AbortSignal; profile: SpeedProfile; onLog: (level: "info" | "warn" | "error", message: string) => void; targetPlaceId?: string },
+  ): Promise<RawListing | null> {
+    if (!this.ctx) throw new Error("source not open()ed");
+    const page = await this.ctx.newPage();
+    const query = [businessName, locationHint].filter(Boolean).join(" ");
+    opts.onLog("info", `lookup — searching Maps for "${query}"`);
+    await page.goto(`https://www.google.com/maps/search/${encodeURIComponent(query)}`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await actionDelay(opts.signal, opts.profile);
+    if (/\/sorry\//.test(page.url())) throw new ScrapeBlockedError("Google 'unusual traffic' block (/sorry) during lookup");
+    await this.assertNotBlocked(page);
+
+    // Maps may jump straight to the place page for a specific-enough query —
+    // in that case there is no feed, the detail panel is already up.
+    let href: string | null = null;
+    if (/\/maps\/place\//.test(page.url())) {
+      href = page.url();
+    } else {
+      if ((await page.locator(MAPS.resultsFeed).count()) === 0) {
+        opts.onLog("warn", "lookup — no results feed and not a place page; nothing matched");
+        return null;
+      }
+      const feedOpts: ScrapeSourceOptions = { maxLeads: 10, signal: opts.signal, onLog: opts.onLog, profile: opts.profile, detailLevel: "full" };
+      const cards = await this.harvestFeed(page, feedOpts);
+      if (cards.length === 0) return null;
+      const target = opts.targetPlaceId?.trim();
+      const byId = target ? cards.find((c) => { const ids = extractPlaceIds(c.href); return ids.mid === target || ids.cid === target; }) : undefined;
+      const byName = cards.find((c) => c.name.trim().toLowerCase() === businessName.trim().toLowerCase());
+      const chosen = byId ?? byName ?? cards[0]!;
+      if (!byId && target) opts.onLog("warn", `lookup — place id not in results; matched by ${byName ? "name" : "first result"}`);
+      href = chosen.href;
+      await page.goto(href, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await actionDelay(opts.signal, opts.profile);
+      if (/\/sorry\//.test(page.url())) throw new ScrapeBlockedError("Google /sorry block during lookup detail");
+      await this.assertNotBlocked(page);
+    }
+
+    await this.waitForDetail(page, opts.signal);
+    const detail = await this.readDetail(page);
+    detail.hours = await this.readFullHours(page, opts.signal);
+    const ids = extractPlaceIds(detail.url);
+    const name = detail.h1 || businessName;
+    return {
+      placeId: ids.mid ?? ids.cid ?? bestPlaceId(detail.url, name),
+      businessName: name,
+      rating: parseStars(detail.ratingAria),
+      reviewCount: parseReviews(detail.reviewsAria),
+      phone: parsePhone(detail.phoneAria, detail.phoneId),
+      website: cleanWebsite(detail.website),
+      address: detail.addressAria ? detail.addressAria.replace(/^Address:\s*/i, "").trim() : undefined,
+      hours: detail.hours ?? undefined,
+      claimed: !detail.claimPresent,
+    };
   }
 
   private async assertNotBlocked(page: PwPage): Promise<void> {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLiveState } from "../App.tsx";
 import { QueuePanel } from "./QueuePanel.tsx";
+import { QualifyPanel } from "./QualifyPanel.tsx";
 import { NewSearch } from "./NewSearch.tsx";
 import { RunLog } from "./RunLog.tsx";
 import { CapturedLeads } from "./CapturedLeads.tsx";
@@ -34,6 +35,7 @@ export function Dashboard({ email, onSignOut }: { email: string; onSignOut: () =
         <div className="col">
           <NewSearch />
           <QueuePanel queue={queue} />
+          <QualifyPanel />
         </div>
         <div className="col">
           <CapturedLeads />

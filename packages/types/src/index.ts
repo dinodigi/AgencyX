@@ -178,3 +178,83 @@ export function toScrapeSpeed(raw: string | null | undefined): ScrapeSpeed {
 export const SCRAPE_DETAIL_LEVELS = ["full", "preview"] as const;
 export type ScrapeDetailLevel = (typeof SCRAPE_DETAIL_LEVELS)[number];
 export const DEFAULT_DETAIL_LEVEL: ScrapeDetailLevel = "full";
+
+// ---------------------------------------------------------------------------
+// Qualification — the scraped→qualified deep-research phase. The desktop
+// collects (deep re-scrape + site crawl + Moz audit) and writes `scan_json`;
+// the web scores it and Claude writes the brief. This section is the shared
+// contract for that JSON blob and the status vocabulary, so the desktop
+// (writer) and the web (reader, Phase-4 scoring) can never drift.
+// ---------------------------------------------------------------------------
+
+export const QUALIFICATION_STATUSES = ["pending", "collecting", "collected", "scored", "briefed", "failed"] as const;
+export type QualificationStatus = (typeof QUALIFICATION_STATUSES)[number];
+
+/** 1:1 lead identity — one qualification row per lead per org. */
+export function makeQualificationDedupKey(orgId: string, leadId: string): string {
+  return `${orgId}:${leadId.trim()}`;
+}
+
+/** One crawled page's on-page SEO signals (no bodies stored — signals only). */
+export interface ScanPage {
+  url: string;
+  status: number;
+  title?: string;
+  description?: string;
+  h1?: string;
+  h2Count: number;
+  wordCount: number;
+  internalLinks: number;
+  externalLinks: number;
+  images: number;
+  imagesWithoutAlt: number;
+  hasCanonical: boolean;
+  robotsMeta?: string;
+  hasViewport: boolean;
+  hasJsonLd: boolean;
+  ogTitle?: string;
+}
+
+/** Site-level crawl result: silo structure, tech fingerprint, warnings. */
+export interface ScanSite {
+  origin: string;
+  startUrl: string;
+  pageCount: number;
+  crawledMs: number;
+  /** True when the page/time cap cut the crawl short (or scan_json was trimmed to fit). */
+  truncated: boolean;
+  pages: ScanPage[];
+  /** URL-silo sections: first path segment → number of pages under it. */
+  silo: { section: string; pages: number }[];
+  robotsTxtFound: boolean;
+  sitemapFound: boolean;
+  /** Detected platform/stack markers (WordPress, Shopify, Next.js, …). */
+  tech: string[];
+  warnings: string[];
+}
+
+/** Moz Local free-tool audit outcome (async sub-job; reportId is durable). */
+export interface ScanMoz {
+  reportId?: string;
+  submittedAt?: string;
+  /** True when the report JSON was captured; false = submitted but timed out (re-fetch later via reportId). */
+  fetched: boolean;
+  directoriesChecked?: number;
+  directoriesFound?: number;
+  /** 0–100 derived listing-health score, when computable. */
+  score?: number;
+  error?: string;
+}
+
+/** The `qualifications.scan_json` payload the desktop job assembles. */
+export interface QualificationScan {
+  version: 1;
+  collectedAt: string;
+  /** Deep listing re-scrape (fresh Maps detail read); absent when the lookup failed. */
+  listing?: RawListing & { fetchedAt: string };
+  /** Absent when the lead has no website (itself a scoring signal). */
+  site?: ScanSite;
+  /** Absent when no address could be parsed for the Moz form. */
+  moz?: ScanMoz;
+  warnings: string[];
+}
