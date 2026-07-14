@@ -233,6 +233,19 @@ export interface ScanSite {
   warnings: string[];
 }
 
+/** One directory's result from the Moz audit — what that directory has on file. */
+export interface MozDirectoryRow {
+  source: string;
+  status: string;
+  businessName?: string;
+  address?: string;
+  phone?: string;
+  rating?: number;
+  reviewCount?: number;
+  /** The directory's listing page, when Moz surfaced one. */
+  url?: string;
+}
+
 /** Moz Local free-tool audit outcome (async sub-job; reportId is durable). */
 export interface ScanMoz {
   reportId?: string;
@@ -243,6 +256,8 @@ export interface ScanMoz {
   directoriesFound?: number;
   /** 0–100 derived listing-health score, when computable. */
   score?: number;
+  /** Per-directory results (also stored in listing_audits.directories_json). */
+  directories?: MozDirectoryRow[];
   error?: string;
 }
 

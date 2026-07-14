@@ -286,6 +286,45 @@ test("parseMozReport derives a score when no percent is present, rejects junk", 
   assert.equal(parseMozReport(null), null);
 });
 
+test("parseMozReport extracts what each directory has on file (rich rows)", () => {
+  const parsed = parseMozReport({
+    listings: [
+      {
+        source: "Google",
+        listingStatus: "Good",
+        listingBusinessName: "Tribute Hollywood",
+        listingAddress: "1608 N Cahuenga Blvd, Los Angeles, CA 90028",
+        listingPhone: "(323) 450-9005",
+        listingRating: 4.7,
+        listingReviewCount: 174,
+        link: "https://www.google.com/search?q=Tribute+Hollywood",
+        listingSiteUrl: "https://tributehollywood.com/",
+      },
+      {
+        source: "BBB",
+        listingStatus: "NotFound",
+        listingBusinessName: "N/A",
+        listingAddress: "N/A",
+        listingPhone: "N/A",
+        listingRating: 0,
+        listingReviewCount: 0,
+        link: "N/A",
+      },
+    ],
+  });
+  assert.ok(parsed);
+  const google = parsed.directories.find((d) => d.source === "Google")!;
+  assert.equal(google.businessName, "Tribute Hollywood");
+  assert.equal(google.address, "1608 N Cahuenga Blvd, Los Angeles, CA 90028");
+  assert.equal(google.phone, "(323) 450-9005");
+  assert.equal(google.rating, 4.7);
+  assert.equal(google.reviewCount, 174);
+  assert.ok(google.url?.startsWith("https://www.google.com/"));
+  const bbb = parsed.directories.find((d) => d.source === "BBB")!;
+  assert.equal(bbb.businessName, undefined); // "N/A" and zeroes stay sparse
+  assert.equal(bbb.url, undefined);
+});
+
 test("parseMozReport: NeedsAttention gets half credit, scan errors are excluded", () => {
   // Mirrors the live report shape: Good/NeedsAttention/NotFound/Error statuses.
   const parsed = parseMozReport({

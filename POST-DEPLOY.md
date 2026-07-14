@@ -64,6 +64,17 @@ build` artifact.
 | 5 · Scoring | Deterministic sub-scores → business health | web |
 | 6 · AI brief | Compiles signals into the structured brief | Claude (web) |
 
+**Step 0 — lead cleanup (added 2026-07-14):** the qualify click cleans the lead
+*before* any collection: a free deterministic pass (emoji, phone/URL/whitespace
+normalization), then — only when heuristics flag judgment work (branch suffixes
+in names, shouty casing, unparseable addresses) — the pipeline's first Claude
+call (normalize-never-invent, structured output). Clean inputs are what make
+the Moz form, the Maps lookup, and the crawl land on the right business.
+Verified live: the Moz form fill was already correct (raw report echoes the
+exact submitted NAP), the scan completed in 134s (timeout now 240s), and the
+score derivation was made fairer (NeedsAttention = half credit, Moz-side scan
+errors excluded).
+
 ### Moz listing audit — nailed down (verified 2026-07-13)
 
 Free tool is an **iframe** `#check-listing-iframe` → `moz.com/freemium/local/check-listing`.

@@ -13,6 +13,7 @@
  * stored in listing_audits.raw_result regardless.
  */
 
+import type { MozDirectoryRow } from "@dinosales/types";
 import { ScrapeBlockedError } from "../scraper/types.ts";
 import { sleep } from "../scraper/human.ts";
 
@@ -24,10 +25,7 @@ export interface MozInput {
   zip: string;
 }
 
-export interface MozDirectoryResult {
-  source: string;
-  status: string;
-}
+export type MozDirectoryResult = MozDirectoryRow;
 
 export interface MozParsed {
   directories: MozDirectoryResult[];
@@ -63,17 +61,37 @@ export function parseMozReport(json: unknown): MozParsed | null {
   const directories: MozDirectoryResult[] = [];
   let percentCorrect: number | undefined;
 
+  // "N/A" and zeroes are Moz's empty markers — keep rows sparse, not noisy.
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim().length > 0 && v.trim() !== "N/A" ? v.trim() : undefined);
+  const num = (v: unknown): number | undefined => (typeof v === "number" && v > 0 ? v : undefined);
+
   const visit = (node: unknown, depth: number): void => {
     if (depth > 8 || node === null || typeof node !== "object") return;
     if (Array.isArray(node)) {
       // An array of {source-ish, status-ish} objects = the per-directory table.
+      // Beyond the status, pull what the directory has ON FILE for the business
+      // (name/address/phone/rating) — that's the reviewable NAP-consistency data.
       const rows = node
         .map((item) => {
           const rec = asRecord(item);
           if (!rec) return null;
           const source = SOURCE_KEYS.map((k) => rec[k]).find((v) => typeof v === "string" && v.length > 0) as string | undefined;
           const status = STATUS_KEYS.map((k) => rec[k]).find((v) => typeof v === "string" && v.length > 0) as string | undefined;
-          return source && status ? { source, status } : null;
+          if (!source || !status) return null;
+          const row: MozDirectoryRow = { source, status };
+          const businessName = str(rec.listingBusinessName ?? rec.businessName);
+          const address = str(rec.listingAddress);
+          const phone = str(rec.listingPhone);
+          const rating = num(rec.listingRating);
+          const reviewCount = num(rec.listingReviewCount);
+          const url = str(rec.link) ?? str(rec.listingSiteUrl);
+          if (businessName) row.businessName = businessName;
+          if (address) row.address = address;
+          if (phone) row.phone = phone;
+          if (rating) row.rating = rating;
+          if (reviewCount) row.reviewCount = reviewCount;
+          if (url) row.url = url;
+          return row;
         })
         .filter((r): r is MozDirectoryResult => r !== null);
       if (rows.length >= 2 && rows.length > directories.length) {

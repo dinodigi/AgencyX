@@ -24,10 +24,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   let lead: Awaited<ReturnType<typeof ctx.ax.leads.get>> | null = null;
   let qual: Awaited<ReturnType<typeof ctx.ax.qualifications.list>>[number] | null = null;
+  let audit: Awaited<ReturnType<typeof ctx.ax.listing_audits.list>>[number] | null = null;
   let error: string | null = null;
   try {
     lead = await ctx.ax.leads.get(id);
     qual = (await ctx.ax.qualifications.list({ filter: { lead: id }, limit: 1 }))[0] ?? null;
+    audit = (await ctx.ax.listing_audits.list({ filter: { lead: id }, limit: 1 }))[0] ?? null;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -73,7 +75,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           />
         </Card>
 
-        <QualificationPanel qual={qual} leadId={lead.id} />
+        <QualificationPanel qual={qual} audit={audit} leadId={lead.id} />
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <Section title="Contact & location">
@@ -117,19 +119,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           </Section>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Section title="Activity & history">
-            <p className="text-sm text-[var(--color-muted)]">
-              Stage changes, proposals, and notes will appear here as the lead moves through its lifecycle.
-              (Audit trail wiring — Phase 3+.)
-            </p>
-          </Section>
-          <Section title="Proposal">
-            <p className="text-sm text-[var(--color-muted)]">
-              Sample site + proposal generation fire when a lead reaches <b>building</b> / <b>proposed</b>. (Phase 4/5.)
-            </p>
-          </Section>
-        </div>
+        <p className="px-1 text-xs text-[var(--color-muted)]">
+          Coming later: activity history (Phase 3+) · sample site + proposal generation on <b>building</b>/<b>proposed</b> (Phase 4/5).
+        </p>
 
         <div className="flex items-center justify-between rounded-xl border border-red-500/20 bg-red-500/[0.03] px-6 py-4">
           <div>

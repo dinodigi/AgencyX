@@ -160,6 +160,9 @@ export class QualifyRunner {
             directoriesChecked: moz.parsed?.checked,
             directoriesFound: moz.parsed?.found,
             score: moz.parsed?.score,
+            // Per-directory rows ride in the scan too (bounded), so the web
+            // panel can render the Listings table without a second fetch.
+            directories: moz.parsed?.directories.slice(0, 30),
             error: moz.error,
           };
           scan.moz = summary;

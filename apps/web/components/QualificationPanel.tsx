@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
-import type { Qualifications } from "@dinosales/agentx-client";
-import type { QualificationBrief, QualificationScan } from "@dinosales/types";
+import type { ListingAudits, Qualifications } from "@dinosales/agentx-client";
+import type { MozDirectoryRow, QualificationBrief, QualificationScan } from "@dinosales/types";
 import { Card } from "@/components/ui.tsx";
 import { QualifyActions } from "@/components/QualifyActions.tsx";
 import { BriefActions } from "@/components/BriefActions.tsx";
+import { Tabs, type TabDef } from "@/components/Tabs.tsx";
 
 /**
- * The qualification workspace (build-order step 5): everything the research
- * job collected, the deterministic scores, and the AI brief — reviewable in
- * one place, because a lead only advances to `qualified` after a human has
- * seen this. Server component; live-sync refreshes it as statuses move.
+ * The qualification workspace (build-order step 5): status + scores stay
+ * always-visible up top; everything deep — the AI brief, the crawl detail, the
+ * per-directory Moz results, collection notes — lives behind tabs so the lead
+ * page stays navigable. A lead only advances to `qualified` after a human has
+ * reviewed this.
  */
 
 const REVIEWABLE = ["collected", "scored", "briefed"];
@@ -27,6 +29,14 @@ function scoreTone(score: number): string {
   if (score >= 70) return "var(--color-stage-sold)";
   if (score >= 40) return "var(--color-stage-building)";
   return "#f87171";
+}
+
+function statusTone(status: string): { color: string; label: string } {
+  const s = status.toLowerCase();
+  if (/good|correct|complete/.test(s)) return { color: "var(--color-stage-sold)", label: status };
+  if (/attention|incomplete|partial|pending/.test(s)) return { color: "var(--color-stage-building)", label: status };
+  if (/not[\s_-]?found|missing|absent/.test(s)) return { color: "#f87171", label: "Not found" };
+  return { color: "var(--color-muted)", label: status };
 }
 
 function ScoreTile({ label, value }: { label: string; value?: number }) {
@@ -72,11 +82,238 @@ const STATUS_HINT: Record<string, string> = {
   failed: "Collection failed — retry from here.",
 };
 
-export function QualificationPanel({ qual, leadId }: { qual: Qualifications | null; leadId: string }) {
+// --- tab bodies ---------------------------------------------------------------
+
+function BriefTab({ qual, brief }: { qual: Qualifications; brief: QualificationBrief }) {
+  return (
+    <div>
+      <div className="mb-4 text-right text-xs text-[var(--color-muted)]">
+        {qual.model} · {qual.briefed_at ? new Date(qual.briefed_at).toLocaleString() : ""}
+      </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-4">
+          <SubSection title="SEO — summary">
+            <p className="text-sm">{brief.seo.executiveSummary}</p>
+          </SubSection>
+          <SubSection title="Weaknesses">
+            <BulletList items={brief.seo.audit.weaknesses} tone="#f87171" />
+          </SubSection>
+          <SubSection title="Technical issues">
+            <BulletList items={brief.seo.audit.technicalIssues} tone="var(--color-stage-building)" />
+          </SubSection>
+          <SubSection title="Keyword strategy">
+            <BulletList items={brief.seo.keywordStrategy} />
+          </SubSection>
+          <SubSection title="Roadmap">
+            <BulletList items={brief.seo.roadmap} />
+          </SubSection>
+        </div>
+        <div className="flex flex-col gap-4">
+          <SubSection title="Brand essence">
+            <p className="text-sm">{brief.brand.essence}</p>
+          </SubSection>
+          <SubSection title="Voice">
+            <p className="text-sm">{brief.brand.voice}</p>
+          </SubSection>
+          <SubSection title="Visual direction">
+            <p className="text-sm">{brief.brand.visualDirection}</p>
+          </SubSection>
+          <SubSection title="Verified facts">
+            <BulletList items={brief.brand.verifiedFacts} tone="var(--color-stage-sold)" />
+          </SubSection>
+        </div>
+        <div className="flex flex-col gap-4">
+          <SubSection title="Proposal">
+            <p className="text-sm">{brief.proposal.executiveSummary}</p>
+          </SubSection>
+          <SubSection title="Scope">
+            <BulletList items={brief.proposal.scope} />
+          </SubSection>
+          <SubSection title="Outcomes">
+            <BulletList items={brief.proposal.outcomes} tone="var(--color-stage-sold)" />
+          </SubSection>
+          <SubSection title="Recommended packages">
+            <BulletList items={brief.proposal.recommendedPackages} tone="var(--color-stage-qualified)" />
+          </SubSection>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SiteTab({ scan }: { scan: QualificationScan }) {
+  if (!scan.site) {
+    return <p className="text-sm text-[var(--color-stage-building)]">No website — that's the headline signal for the pitch.</p>;
+  }
+  const site = scan.site;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+        <span className="font-semibold text-[var(--color-ink)]">{site.pageCount} pages</span>
+        <span>·</span>
+        <span>{site.tech.join(", ") || "stack unknown"}</span>
+        <span>·</span>
+        <span>{site.robotsTxtFound ? "robots.txt ✓" : "no robots.txt"}</span>
+        <span>·</span>
+        <span>{site.sitemapFound ? "sitemap ✓" : "no sitemap"}</span>
+        {site.truncated && (
+          <>
+            <span>·</span>
+            <span className="text-[var(--color-stage-building)]">truncated at cap</span>
+          </>
+        )}
+      </div>
+      <SubSection title="Silo">
+        <p className="text-sm text-[var(--color-muted)]">{site.silo.map((s) => `${s.section} (${s.pages})`).join(" · ")}</p>
+      </SubSection>
+      <SubSection title="On-page warnings">
+        <BulletList items={site.warnings} tone="var(--color-stage-building)" />
+      </SubSection>
+      <SubSection title="Pages">
+        <div className="max-h-80 overflow-y-auto rounded-lg border border-[var(--color-border)]">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+              <tr>
+                <th className="px-2 py-1.5">Page</th>
+                <th className="px-2 py-1.5">Title</th>
+                <th className="px-2 py-1.5 text-right">Words</th>
+              </tr>
+            </thead>
+            <tbody>
+              {site.pages.slice(0, 40).map((p) => (
+                <tr key={p.url} className="border-t border-[var(--color-border)]">
+                  <td className="px-2 py-1.5 font-mono">
+                    {p.status >= 400 && <span className="mr-1 text-red-400">{p.status}</span>}
+                    {new URL(p.url).pathname}
+                  </td>
+                  <td className="px-2 py-1.5 text-[var(--color-muted)]">{p.title ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-right">{p.wordCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SubSection>
+    </div>
+  );
+}
+
+function ListingsTab({ scan, directories }: { scan: QualificationScan | null; directories: MozDirectoryRow[] }) {
+  const moz = scan?.moz;
+  return (
+    <div className="flex flex-col gap-4">
+      {moz ? (
+        <p className="text-sm">
+          Listed on <b>{moz.directoriesFound ?? "?"}</b> of <b>{moz.directoriesChecked ?? "?"}</b> directories · accuracy{" "}
+          <b style={{ color: moz.score !== undefined ? scoreTone(moz.score) : undefined }}>{moz.score ?? "?"}</b>/100
+          {moz.error && <span className="text-[var(--color-muted)]"> ({moz.error} — reportId saved for re-fetch)</span>}
+        </p>
+      ) : (
+        <p className="text-sm text-[var(--color-muted)]">Listing audit not run (no parseable address).</p>
+      )}
+
+      {directories.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <table className="w-full text-xs">
+            <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+              <tr>
+                <th className="px-2 py-1.5">Directory</th>
+                <th className="px-2 py-1.5">Status</th>
+                <th className="px-2 py-1.5">Name on file</th>
+                <th className="px-2 py-1.5">Address on file</th>
+                <th className="px-2 py-1.5">Phone</th>
+                <th className="px-2 py-1.5 text-right">Reviews</th>
+              </tr>
+            </thead>
+            <tbody>
+              {directories.map((d, i) => {
+                const tone = statusTone(d.status);
+                return (
+                  <tr key={`${d.source}-${i}`} className="border-t border-[var(--color-border)]">
+                    <td className="px-2 py-1.5 font-medium">
+                      {d.url ? (
+                        <a href={d.url} target="_blank" rel="noreferrer" className="hover:underline">
+                          {d.source} ↗
+                        </a>
+                      ) : (
+                        d.source
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ color: tone.color, background: `color-mix(in srgb, ${tone.color} 12%, transparent)` }}>
+                        {tone.label}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5">{d.businessName ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-[var(--color-muted)]">{d.address ?? "—"}</td>
+                    <td className="px-2 py-1.5">{d.phone ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-right">{d.reviewCount ? `${d.reviewCount}${d.rating ? ` · ${d.rating}★` : ""}` : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--color-muted)]">
+          No per-directory rows on this audit{moz ? " — collected before directory detail shipped; re-run the research to fill this table" : ""}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function NotesTab({ qual, scan }: { qual: Qualifications; scan: QualificationScan | null }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <SubSection title="Listing re-scrape">
+        {scan?.listing ? (
+          <p className="text-sm">
+            {scan.listing.rating ?? "?"}★ · {scan.listing.reviewCount ?? 0} reviews ·{" "}
+            {scan.listing.claimed ? "claimed" : <span className="text-[var(--color-stage-building)]">unclaimed</span>}
+            {scan.listing.hours ? " · hours on file" : ""}
+          </p>
+        ) : (
+          <p className="text-sm text-[var(--color-muted)]">Maps lookup didn't match — using stored lead data.</p>
+        )}
+      </SubSection>
+      {scan && scan.warnings.length > 0 && (
+        <SubSection title="Collection notes">
+          <BulletList items={scan.warnings} tone="var(--color-muted)" />
+        </SubSection>
+      )}
+      <SubSection title="Run metadata">
+        <p className="text-sm text-[var(--color-muted)]">
+          collected {qual.collected_at ? new Date(qual.collected_at).toLocaleString() : "—"}
+          {qual.website_url ? ` · ${qual.website_url}` : ""}
+          {qual.briefed_at ? ` · briefed ${new Date(qual.briefed_at).toLocaleString()} (${qual.model})` : ""}
+        </p>
+      </SubSection>
+    </div>
+  );
+}
+
+// --- the panel ----------------------------------------------------------------
+
+export function QualificationPanel({ qual, audit, leadId }: { qual: Qualifications | null; audit: ListingAudits | null; leadId: string }) {
   const status = qual?.status ?? undefined;
   const scan = parse<QualificationScan>(qual?.scan_json);
   const brief = parse<QualificationBrief>(qual?.brief_json);
   const reviewable = !!qual && REVIEWABLE.includes(status ?? "");
+  const directories = parse<MozDirectoryRow[]>(audit?.directories_json) ?? scan?.moz?.directories ?? [];
+
+  const tabs: TabDef[] = [];
+  if (brief && qual) tabs.push({ id: "brief", label: "AI brief", content: <BriefTab qual={qual} brief={brief} /> });
+  if (scan) {
+    tabs.push({ id: "site", label: "Site crawl", badge: scan.site ? String(scan.site.pageCount) : "none", content: <SiteTab scan={scan} /> });
+    tabs.push({
+      id: "listings",
+      label: "Listings",
+      badge: scan.moz ? `${scan.moz.directoriesFound ?? "?"}/${scan.moz.directoriesChecked ?? "?"}` : directories.length > 0 ? String(directories.length) : undefined,
+      content: <ListingsTab scan={scan} directories={directories} />,
+    });
+    if (qual) tabs.push({ id: "notes", label: "Notes", badge: scan.warnings.length > 0 ? String(scan.warnings.length) : undefined, content: <NotesTab qual={qual} scan={scan} /> });
+  }
 
   return (
     <Card className="p-6">
@@ -101,7 +338,7 @@ export function QualificationPanel({ qual, leadId }: { qual: Qualifications | nu
 
       {/* Scores — deterministic, explainable; the AI never assigns them. */}
       {qual && (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <ScoreTile label="SEO" value={qual.seo_score} />
           <ScoreTile label="Content" value={qual.content_score} />
           <ScoreTile label="UX" value={qual.ux_score} />
@@ -117,140 +354,7 @@ export function QualificationPanel({ qual, leadId }: { qual: Qualifications | nu
         </div>
       )}
 
-      {/* What was collected */}
-      {scan && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {scan.site ? (
-            <SubSection title={`Site crawl — ${scan.site.pageCount} pages · ${scan.site.tech.join(", ") || "stack unknown"}`}>
-              <div className="mb-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-                <span>{scan.site.robotsTxtFound ? "robots.txt ✓" : "no robots.txt"}</span>
-                <span>·</span>
-                <span>{scan.site.sitemapFound ? "sitemap ✓" : "no sitemap"}</span>
-                <span>·</span>
-                <span>silo: {scan.site.silo.map((s) => `${s.section} (${s.pages})`).join(" · ")}</span>
-              </div>
-              <BulletList items={scan.site.warnings} tone="var(--color-stage-building)" />
-              <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-[var(--color-border)]">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-                    <tr>
-                      <th className="px-2 py-1.5">Page</th>
-                      <th className="px-2 py-1.5">Title</th>
-                      <th className="px-2 py-1.5 text-right">Words</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scan.site.pages.slice(0, 25).map((p) => (
-                      <tr key={p.url} className="border-t border-[var(--color-border)]">
-                        <td className="px-2 py-1.5 font-mono">
-                          {p.status >= 400 && <span className="mr-1 text-red-400">{p.status}</span>}
-                          {new URL(p.url).pathname}
-                        </td>
-                        <td className="px-2 py-1.5 text-[var(--color-muted)]">{p.title ?? "—"}</td>
-                        <td className="px-2 py-1.5 text-right">{p.wordCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </SubSection>
-          ) : (
-            <SubSection title="Site crawl">
-              <p className="text-sm text-[var(--color-stage-building)]">No website — that's the headline signal for the pitch.</p>
-            </SubSection>
-          )}
-
-          <div className="flex flex-col gap-5">
-            <SubSection title="Listing audit (Moz)">
-              {scan.moz ? (
-                <p className="text-sm">
-                  Listed on <b>{scan.moz.directoriesFound ?? "?"}</b> of <b>{scan.moz.directoriesChecked ?? "?"}</b> directories · accuracy{" "}
-                  <b style={{ color: scan.moz.score !== undefined ? scoreTone(scan.moz.score) : undefined }}>{scan.moz.score ?? "?"}</b>/100
-                  {scan.moz.error && <span className="text-[var(--color-muted)]"> ({scan.moz.error} — reportId saved for re-fetch)</span>}
-                </p>
-              ) : (
-                <p className="text-sm text-[var(--color-muted)]">Not run (no parseable address).</p>
-              )}
-            </SubSection>
-
-            <SubSection title="Listing re-scrape">
-              {scan.listing ? (
-                <p className="text-sm">
-                  {scan.listing.rating ?? "?"}★ · {scan.listing.reviewCount ?? 0} reviews · {scan.listing.claimed ? "claimed" : <span className="text-[var(--color-stage-building)]">unclaimed</span>}
-                  {scan.listing.hours ? " · hours on file" : ""}
-                </p>
-              ) : (
-                <p className="text-sm text-[var(--color-muted)]">Maps lookup didn't match — using stored lead data.</p>
-              )}
-            </SubSection>
-
-            {scan.warnings.length > 0 && (
-              <SubSection title="Collection notes">
-                <BulletList items={scan.warnings} tone="var(--color-muted)" />
-              </SubSection>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* The AI brief */}
-      {brief && (
-        <div className="mt-6 border-t border-[var(--color-border)] pt-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-[var(--color-muted)]">AI brief</h2>
-            <span className="text-xs text-[var(--color-muted)]">
-              {qual?.model} · {qual?.briefed_at ? new Date(qual.briefed_at).toLocaleString() : ""}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className="flex flex-col gap-4">
-              <SubSection title="SEO — summary">
-                <p className="text-sm">{brief.seo.executiveSummary}</p>
-              </SubSection>
-              <SubSection title="Weaknesses">
-                <BulletList items={brief.seo.audit.weaknesses} tone="#f87171" />
-              </SubSection>
-              <SubSection title="Technical issues">
-                <BulletList items={brief.seo.audit.technicalIssues} tone="var(--color-stage-building)" />
-              </SubSection>
-              <SubSection title="Keyword strategy">
-                <BulletList items={brief.seo.keywordStrategy} />
-              </SubSection>
-              <SubSection title="Roadmap">
-                <BulletList items={brief.seo.roadmap} />
-              </SubSection>
-            </div>
-            <div className="flex flex-col gap-4">
-              <SubSection title="Brand essence">
-                <p className="text-sm">{brief.brand.essence}</p>
-              </SubSection>
-              <SubSection title="Voice">
-                <p className="text-sm">{brief.brand.voice}</p>
-              </SubSection>
-              <SubSection title="Visual direction">
-                <p className="text-sm">{brief.brand.visualDirection}</p>
-              </SubSection>
-              <SubSection title="Verified facts">
-                <BulletList items={brief.brand.verifiedFacts} tone="var(--color-stage-sold)" />
-              </SubSection>
-            </div>
-            <div className="flex flex-col gap-4">
-              <SubSection title="Proposal">
-                <p className="text-sm">{brief.proposal.executiveSummary}</p>
-              </SubSection>
-              <SubSection title="Scope">
-                <BulletList items={brief.proposal.scope} />
-              </SubSection>
-              <SubSection title="Outcomes">
-                <BulletList items={brief.proposal.outcomes} tone="var(--color-stage-sold)" />
-              </SubSection>
-              <SubSection title="Recommended packages">
-                <BulletList items={brief.proposal.recommendedPackages} tone="var(--color-stage-qualified)" />
-              </SubSection>
-            </div>
-          </div>
-        </div>
-      )}
+      {tabs.length > 0 && <Tabs tabs={tabs} defaultId={brief ? "brief" : "site"} />}
     </Card>
   );
 }
