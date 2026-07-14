@@ -10,7 +10,8 @@ Hosted (rendered) version, kept in sync:
 
 What we build **after** the management pipeline shipped. Two workstreams turn it
 from "runs" into "runs well": a scraper rebuilt on stable anchors (done), then the
-qualification phase that researches a lead and drafts its brief (next).
+qualification phase that researches a lead and drafts its brief (in progress —
+schema + client live, desktop job next).
 
 ---
 
@@ -82,24 +83,37 @@ artifact's proven `plan`:
 
 Scores are deterministic (explainable); the AI writes the narrative on top.
 
-### Schema
+### Schema — ✅ SHIPPED (live 2026-07-13)
 
-- **`qualifications`** (new · 1:1 lead): `status` (workflow) · `website_url` ·
-  six score fields · `page_count` · JSON blobs `scan_json` / `brief_json` ·
-  `model`, `collected_at`, `briefed_at`. Kept separate so blobs don't bloat lead
-  reads.
-- **`listing_audits`** (exists · enrich): add `report_id`, `directories_json`
-  (per-source), `score`. Feeds the lead's `listing_health_score`.
+- **`qualifications`** (new · 1:1 lead, enforced by unique `dedup_key` =
+  `{orgId}:{leadId}`): `status` workflow
+  `pending→collecting→collected→scored→briefed` (+ `failed` off both collect
+  and score; `scored`/`briefed`/`failed` → `pending` for retry/re-run) ·
+  `website_url` · six 0–100 scores — `seo_score`, `content_score`, `ux_score`
+  (the artifact's proven score shape) + `performance_score`, `listing_score`,
+  `business_health_score` (the composite) · `page_count` · richtext blobs
+  `scan_json` / `brief_json` (AgentX has no JSON field type) · `model`,
+  `collected_at`, `briefed_at`. Kept separate so blobs don't bloat lead reads.
+  The extra `collected` state exists because delivery filters are
+  equality-only — the web must be able to query "signals up, awaiting scoring".
+- **`listing_audits`** (enriched): added `report_id` (durable Moz report),
+  `directories_json` (per-source), `score` (0–100). Feeds the lead's
+  `listing_health_score`. Additive redefine — zero entries affected.
+- Client regenerated (`packages/agentx-client/src/generated.ts`), manifest
+  re-exported, and the CI lint now guards the `qualifications.status` workflow
+  like `leads.stage`. Workflow enforcement verified live: a create with a
+  non-initial status is rejected.
 
 ---
 
 ## Build order
 
 1. **Rebuild phase-1 scraper** — ✅ shipped.
-2. **Qualification schema + client** — ◀ next: `qualifications` collection +
-   `listing_audits` enrichment, regen client, sync manifest.
-3. **Desktop qualification job** — deep re-scrape → full site crawl + on-page SEO
-   → Moz submit/fetch sub-job. Live progress, syncs signals up.
+2. **Qualification schema + client** — ✅ shipped: `qualifications` collection
+   live (workflow enforcement verified), `listing_audits` enriched, client
+   regenerated, manifest synced + lint extended. Typecheck and 15 tests green.
+3. **Desktop qualification job** — ◀ next: deep re-scrape → full site crawl +
+   on-page SEO → Moz submit/fetch sub-job. Live progress, syncs signals up.
 4. **Scoring + performance** — PageSpeed + deterministic sub-scores → business health.
 5. **Qualification workspace** — phase-switching lead view (scores, silo, on-page
    issues, Moz results, live progress).

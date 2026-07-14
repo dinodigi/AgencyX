@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const raw = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'manifest.json'), 'utf8').replace(/^﻿/, '');
 const manifest = JSON.parse(raw);
 
-const REQUIRED_WORKFLOWS = { leads: 'stage', search_queries: 'status' };
+const REQUIRED_WORKFLOWS = { leads: 'stage', search_queries: 'status', qualifications: 'status' };
 const errors = [];
 
 for (const c of manifest.collections) {

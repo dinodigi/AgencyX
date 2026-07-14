@@ -29,6 +29,7 @@ export type CollectionName =
   | "search_queries"
   | "leads"
   | "listing_audits"
+  | "qualifications"
   | "services"
   | "microservices"
   | "packages";

@@ -3,7 +3,7 @@
   "project": {
     "name": "AgencyX",
     "branding": {
-      "icon": "code",
+      "icon": "store",
       "displayName": "AgencyX",
       "primaryColor": "#00a87e"
     }
@@ -82,16 +82,66 @@
           "type": "text",
           "label": "Qualification Key Ref"
         },
-        { "name": "logo", "type": "asset", "label": "Logo", "publicRead": true },
-        { "name": "logo_url", "type": "text", "label": "Logo URL", "publicRead": true },
-        { "name": "tagline", "type": "text", "label": "Tagline", "publicRead": true },
-        { "name": "website", "type": "text", "label": "Website", "publicRead": true },
-        { "name": "phone", "type": "text", "label": "Phone", "publicRead": true },
-        { "name": "email", "type": "text", "label": "Email", "publicRead": true },
-        { "name": "address", "type": "text", "label": "Address", "publicRead": true },
-        { "name": "brand_color", "type": "text", "label": "Brand Color", "publicRead": true },
-        { "name": "accent_color", "type": "text", "label": "Accent Color", "publicRead": true },
-        { "name": "proposal_footer", "type": "richtext", "label": "Proposal Footer", "publicRead": true }
+        {
+          "name": "logo",
+          "type": "asset",
+          "label": "Logo",
+          "publicRead": true
+        },
+        {
+          "name": "logo_url",
+          "type": "text",
+          "label": "Logo URL",
+          "publicRead": true
+        },
+        {
+          "name": "tagline",
+          "type": "text",
+          "label": "Tagline",
+          "publicRead": true
+        },
+        {
+          "name": "website",
+          "type": "text",
+          "label": "Website",
+          "publicRead": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "label": "Phone",
+          "publicRead": true
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "label": "Email",
+          "publicRead": true
+        },
+        {
+          "name": "address",
+          "type": "text",
+          "label": "Address",
+          "publicRead": true
+        },
+        {
+          "name": "brand_color",
+          "type": "text",
+          "label": "Brand Color",
+          "publicRead": true
+        },
+        {
+          "name": "accent_color",
+          "type": "text",
+          "label": "Accent Color",
+          "publicRead": true
+        },
+        {
+          "name": "proposal_footer",
+          "type": "richtext",
+          "label": "Proposal Footer",
+          "publicRead": true
+        }
       ]
     },
     {
@@ -260,11 +310,51 @@
               "admin"
             ]
           },
-          { "from": "qualified", "to": "scraped", "actors": ["delivery", "mcp", "admin"] },
-          { "from": "building", "to": "qualified", "actors": ["delivery", "mcp", "admin"] },
-          { "from": "proposed", "to": "building", "actors": ["delivery", "mcp", "admin"] },
-          { "from": "sold", "to": "proposed", "actors": ["delivery", "mcp", "admin"] },
-          { "from": "client", "to": "sold", "actors": ["delivery", "mcp", "admin"] }
+          {
+            "to": "scraped",
+            "from": "qualified",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "qualified",
+            "from": "building",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "building",
+            "from": "proposed",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "proposed",
+            "from": "sold",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "sold",
+            "from": "client",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          }
         ]
       },
       "checkout": null,
@@ -517,6 +607,12 @@
           "publicRead": true
         },
         {
+          "name": "report_id",
+          "type": "text",
+          "label": "Report ID",
+          "publicRead": true
+        },
+        {
           "name": "directories_checked",
           "type": "number",
           "label": "Directories Checked",
@@ -528,6 +624,20 @@
           "type": "number",
           "label": "Directories Found",
           "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "directories_json",
+          "type": "richtext",
+          "label": "Directories JSON",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "score",
+          "type": "number",
+          "label": "Score",
           "publicRead": true
         },
         {
@@ -545,6 +655,493 @@
           "name": "checked_at",
           "type": "date",
           "label": "Checked At",
+          "publicRead": true
+        }
+      ]
+    },
+    {
+      "name": "microservices",
+      "displayName": "Microservices",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "label": "Name",
+          "required": true,
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "label": "Description",
+          "publicRead": true
+        },
+        {
+          "name": "category",
+          "type": "enum",
+          "label": "Category",
+          "options": [
+            "web",
+            "seo",
+            "ads",
+            "social",
+            "branding",
+            "content",
+            "other"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "label": "Active",
+          "publicRead": true
+        },
+        {
+          "name": "sort_order",
+          "type": "number",
+          "label": "Sort Order",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "created_at",
+          "type": "date",
+          "label": "Created At",
+          "publicRead": true
+        }
+      ]
+    },
+    {
+      "name": "packages",
+      "displayName": "Packages",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "service",
+          "type": "relation",
+          "label": "Service",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "services"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "label": "Name",
+          "required": true,
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "summary",
+          "type": "text",
+          "label": "Summary",
+          "publicRead": true
+        },
+        {
+          "min": 0,
+          "name": "price",
+          "type": "number",
+          "label": "Price",
+          "publicRead": true
+        },
+        {
+          "name": "currency",
+          "type": "enum",
+          "label": "Currency",
+          "options": [
+            "usd",
+            "eur",
+            "gbp"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "billing",
+          "type": "enum",
+          "label": "Billing",
+          "options": [
+            "one_time",
+            "monthly",
+            "quarterly",
+            "annual"
+          ],
+          "publicRead": true
+        },
+        {
+          "min": 0,
+          "name": "setup_fee",
+          "type": "number",
+          "label": "Setup Fee",
+          "publicRead": true
+        },
+        {
+          "name": "highlights",
+          "type": "text",
+          "label": "Highlights JSON",
+          "publicRead": true
+        },
+        {
+          "name": "items",
+          "type": "text",
+          "label": "Items JSON",
+          "publicRead": true
+        },
+        {
+          "name": "popular",
+          "type": "boolean",
+          "label": "Popular",
+          "publicRead": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "label": "Active",
+          "publicRead": true
+        },
+        {
+          "name": "sort_order",
+          "type": "number",
+          "label": "Sort Order",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "created_at",
+          "type": "date",
+          "label": "Created At",
+          "publicRead": true
+        }
+      ]
+    },
+    {
+      "name": "qualifications",
+      "displayName": "Qualifications",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": {
+        "field": "status",
+        "initial": "pending",
+        "transitions": [
+          {
+            "to": "collecting",
+            "from": "pending",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "collected",
+            "from": "collecting",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "failed",
+            "from": "collecting",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "scored",
+            "from": "collected",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "failed",
+            "from": "collected",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "briefed",
+            "from": "scored",
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          },
+          {
+            "to": "pending",
+            "from": [
+              "scored",
+              "briefed",
+              "failed"
+            ],
+            "actors": [
+              "delivery",
+              "mcp",
+              "admin"
+            ]
+          }
+        ]
+      },
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "dedup_key",
+          "type": "text",
+          "label": "Dedup Key",
+          "unique": true,
+          "required": true,
+          "publicRead": true
+        },
+        {
+          "name": "lead",
+          "type": "relation",
+          "label": "Lead",
+          "required": true,
+          "labelField": "business_name",
+          "publicRead": true,
+          "targetCollection": "leads"
+        },
+        {
+          "name": "agency",
+          "type": "relation",
+          "label": "Agency",
+          "labelField": "name",
+          "publicRead": true,
+          "targetCollection": "agencies"
+        },
+        {
+          "name": "device",
+          "type": "relation",
+          "label": "Device",
+          "labelField": "device_id",
+          "publicRead": true,
+          "targetCollection": "devices"
+        },
+        {
+          "name": "status",
+          "type": "enum",
+          "label": "Status",
+          "options": [
+            "pending",
+            "collecting",
+            "collected",
+            "scored",
+            "briefed",
+            "failed"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "website_url",
+          "type": "text",
+          "label": "Website URL",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "seo_score",
+          "type": "number",
+          "label": "SEO Score",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "content_score",
+          "type": "number",
+          "label": "Content Score",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "ux_score",
+          "type": "number",
+          "label": "UX Score",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "performance_score",
+          "type": "number",
+          "label": "Performance Score",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "listing_score",
+          "type": "number",
+          "label": "Listing Score",
+          "publicRead": true
+        },
+        {
+          "max": 100,
+          "min": 0,
+          "name": "business_health_score",
+          "type": "number",
+          "label": "Business Health Score",
+          "publicRead": true
+        },
+        {
+          "min": 0,
+          "name": "page_count",
+          "type": "number",
+          "label": "Page Count",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "scan_json",
+          "type": "richtext",
+          "label": "Scan JSON",
+          "publicRead": true
+        },
+        {
+          "name": "brief_json",
+          "type": "richtext",
+          "label": "Brief JSON",
+          "publicRead": true
+        },
+        {
+          "name": "model",
+          "type": "text",
+          "label": "Model",
+          "publicRead": true
+        },
+        {
+          "name": "collected_at",
+          "type": "date",
+          "label": "Collected At",
+          "publicRead": true
+        },
+        {
+          "name": "briefed_at",
+          "type": "date",
+          "label": "Briefed At",
           "publicRead": true
         }
       ]
@@ -702,39 +1299,41 @@
           "type": "number",
           "label": "Max Leads",
           "integer": true,
-          "min": 1,
-          "max": 200,
           "publicRead": true
         },
         {
           "name": "target_website",
           "type": "enum",
           "label": "Target Website",
-          "options": ["any", "missing", "has"],
+          "options": [
+            "any",
+            "missing",
+            "has"
+          ],
           "publicRead": true
         },
         {
+          "min": 0,
           "name": "min_reviews",
           "type": "number",
           "label": "Min Reviews",
           "integer": true,
-          "min": 0,
           "publicRead": true
         },
         {
+          "min": 0,
           "name": "max_reviews",
           "type": "number",
           "label": "Max Reviews",
           "integer": true,
-          "min": 0,
           "publicRead": true
         },
         {
+          "max": 5,
+          "min": 0,
           "name": "min_rating",
           "type": "number",
           "label": "Min Rating",
-          "min": 0,
-          "max": 5,
           "publicRead": true
         },
         {
@@ -781,6 +1380,104 @@
           "labelField": "device_id",
           "publicRead": true,
           "targetCollection": "devices"
+        }
+      ]
+    },
+    {
+      "name": "services",
+      "displayName": "Services",
+      "publicWrite": false,
+      "webhookUrl": null,
+      "publicFilter": null,
+      "access": {
+        "org": {
+          "claim": "org_id",
+          "field": "org_id"
+        },
+        "read": "authenticated",
+        "write": [
+          "owner",
+          {
+            "claim": "org_role",
+            "equals": [
+              "org:admin",
+              "org:member",
+              "admin",
+              "basic_member"
+            ]
+          }
+        ],
+        "ownerField": "created_by"
+      },
+      "events": null,
+      "workflow": null,
+      "checkout": null,
+      "hooks": null,
+      "fields": [
+        {
+          "name": "org_id",
+          "type": "text",
+          "label": "Org ID",
+          "required": true
+        },
+        {
+          "name": "created_by",
+          "type": "text",
+          "label": "Created By"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "label": "Name",
+          "required": true,
+          "publicRead": true,
+          "searchable": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "label": "Description",
+          "publicRead": true
+        },
+        {
+          "name": "category",
+          "type": "enum",
+          "label": "Category",
+          "options": [
+            "web",
+            "seo",
+            "ads",
+            "social",
+            "branding",
+            "content",
+            "other"
+          ],
+          "publicRead": true
+        },
+        {
+          "name": "icon",
+          "type": "text",
+          "label": "Icon",
+          "publicRead": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "label": "Active",
+          "publicRead": true
+        },
+        {
+          "name": "sort_order",
+          "type": "number",
+          "label": "Sort Order",
+          "integer": true,
+          "publicRead": true
+        },
+        {
+          "name": "created_at",
+          "type": "date",
+          "label": "Created At",
+          "publicRead": true
         }
       ]
     },
@@ -859,95 +1556,6 @@
           "publicRead": true,
           "targetCollection": "agencies"
         }
-      ]
-    },
-    {
-      "name": "services",
-      "displayName": "Services",
-      "publicWrite": false,
-      "webhookUrl": null,
-      "publicFilter": null,
-      "access": {
-        "org": { "claim": "org_id", "field": "org_id" },
-        "read": "authenticated",
-        "write": ["owner", { "claim": "org_role", "equals": ["org:admin", "org:member", "admin", "basic_member"] }],
-        "ownerField": "created_by"
-      },
-      "events": null,
-      "workflow": null,
-      "checkout": null,
-      "hooks": null,
-      "fields": [
-        { "name": "org_id", "type": "text", "label": "Org ID", "required": true },
-        { "name": "created_by", "type": "text", "label": "Created By" },
-        { "name": "name", "type": "text", "label": "Name", "required": true, "publicRead": true, "searchable": true },
-        { "name": "description", "type": "text", "label": "Description", "publicRead": true },
-        { "name": "category", "type": "enum", "label": "Category", "options": ["web", "seo", "ads", "social", "branding", "content", "other"], "publicRead": true },
-        { "name": "icon", "type": "text", "label": "Icon", "publicRead": true },
-        { "name": "active", "type": "boolean", "label": "Active", "publicRead": true },
-        { "name": "sort_order", "type": "number", "label": "Sort Order", "integer": true, "publicRead": true },
-        { "name": "created_at", "type": "date", "label": "Created At", "publicRead": true }
-      ]
-    },
-    {
-      "name": "microservices",
-      "displayName": "Microservices",
-      "publicWrite": false,
-      "webhookUrl": null,
-      "publicFilter": null,
-      "access": {
-        "org": { "claim": "org_id", "field": "org_id" },
-        "read": "authenticated",
-        "write": ["owner", { "claim": "org_role", "equals": ["org:admin", "org:member", "admin", "basic_member"] }],
-        "ownerField": "created_by"
-      },
-      "events": null,
-      "workflow": null,
-      "checkout": null,
-      "hooks": null,
-      "fields": [
-        { "name": "org_id", "type": "text", "label": "Org ID", "required": true },
-        { "name": "created_by", "type": "text", "label": "Created By" },
-        { "name": "name", "type": "text", "label": "Name", "required": true, "publicRead": true, "searchable": true },
-        { "name": "description", "type": "text", "label": "Description", "publicRead": true },
-        { "name": "category", "type": "enum", "label": "Category", "options": ["web", "seo", "ads", "social", "branding", "content", "other"], "publicRead": true },
-        { "name": "active", "type": "boolean", "label": "Active", "publicRead": true },
-        { "name": "sort_order", "type": "number", "label": "Sort Order", "integer": true, "publicRead": true },
-        { "name": "created_at", "type": "date", "label": "Created At", "publicRead": true }
-      ]
-    },
-    {
-      "name": "packages",
-      "displayName": "Packages",
-      "publicWrite": false,
-      "webhookUrl": null,
-      "publicFilter": null,
-      "access": {
-        "org": { "claim": "org_id", "field": "org_id" },
-        "read": "authenticated",
-        "write": ["owner", { "claim": "org_role", "equals": ["org:admin", "org:member", "admin", "basic_member"] }],
-        "ownerField": "created_by"
-      },
-      "events": null,
-      "workflow": null,
-      "checkout": null,
-      "hooks": null,
-      "fields": [
-        { "name": "org_id", "type": "text", "label": "Org ID", "required": true },
-        { "name": "created_by", "type": "text", "label": "Created By" },
-        { "name": "service", "type": "relation", "label": "Service", "labelField": "name", "publicRead": true, "targetCollection": "services" },
-        { "name": "name", "type": "text", "label": "Name", "required": true, "publicRead": true, "searchable": true },
-        { "name": "summary", "type": "text", "label": "Summary", "publicRead": true },
-        { "name": "price", "type": "number", "label": "Price", "min": 0, "publicRead": true },
-        { "name": "currency", "type": "enum", "label": "Currency", "options": ["usd", "eur", "gbp"], "publicRead": true },
-        { "name": "billing", "type": "enum", "label": "Billing", "options": ["one_time", "monthly", "quarterly", "annual"], "publicRead": true },
-        { "name": "setup_fee", "type": "number", "label": "Setup Fee", "min": 0, "publicRead": true },
-        { "name": "highlights", "type": "text", "label": "Highlights JSON", "publicRead": true },
-        { "name": "items", "type": "text", "label": "Items JSON", "publicRead": true },
-        { "name": "popular", "type": "boolean", "label": "Popular", "publicRead": true },
-        { "name": "active", "type": "boolean", "label": "Active", "publicRead": true },
-        { "name": "sort_order", "type": "number", "label": "Sort Order", "integer": true, "publicRead": true },
-        { "name": "created_at", "type": "date", "label": "Created At", "publicRead": true }
       ]
     }
   ]

@@ -227,8 +227,11 @@ export interface ListingAudits {
   lead: { id: string; label: string };
   agency?: { id: string; label: string };
   provider?: "moz" | "brightlocal" | "other";
+  report_id?: string;
   directories_checked?: number;
   directories_found?: number;
+  directories_json?: string;
+  score?: number;
   inconsistencies?: string;
   checked_at?: string;
 }
@@ -238,11 +241,13 @@ export interface ListingAuditsListOpts {
     lead?: string;
     agency?: string;
     provider?: "moz" | "brightlocal" | "other";
+    report_id?: string;
     directories_checked?: number;
     directories_found?: number;
+    score?: number;
     checked_at?: string;
   };
-  sort?: { field: "lead" | "agency" | "provider" | "directories_checked" | "directories_found" | "inconsistencies" | "checked_at"; dir: "asc" | "desc" };
+  sort?: { field: "lead" | "agency" | "provider" | "report_id" | "directories_checked" | "directories_found" | "directories_json" | "score" | "inconsistencies" | "checked_at"; dir: "asc" | "desc" };
   limit?: number;
   offset?: number;
 }
@@ -252,8 +257,11 @@ export interface ListingAuditsCreate {
   lead: string;
   agency?: string;
   provider?: "moz" | "brightlocal" | "other";
+  report_id?: string;
   directories_checked?: number;
   directories_found?: number;
+  directories_json?: string;
+  score?: number;
   inconsistencies?: string;
   raw_result?: string;
   checked_at?: string;
@@ -352,6 +360,76 @@ export interface PackagesCreate {
   created_at?: string;
 }
 export type PackagesUpdate = Partial<PackagesCreate>;
+
+/** qualifications — public view; only publicRead fields are ever returned. */
+export interface Qualifications {
+  id: string;
+  dedup_key: string;
+  lead: { id: string; label: string };
+  agency?: { id: string; label: string };
+  device?: { id: string; label: string };
+  status?: "pending" | "collecting" | "collected" | "scored" | "briefed" | "failed";
+  website_url?: string;
+  seo_score?: number;
+  content_score?: number;
+  ux_score?: number;
+  performance_score?: number;
+  listing_score?: number;
+  business_health_score?: number;
+  page_count?: number;
+  scan_json?: string;
+  brief_json?: string;
+  model?: string;
+  collected_at?: string;
+  briefed_at?: string;
+}
+export interface QualificationsListOpts {
+  /** Equality filters on public fields. */
+  filter?: {
+    dedup_key?: string;
+    lead?: string;
+    agency?: string;
+    device?: string;
+    status?: "pending" | "collecting" | "collected" | "scored" | "briefed" | "failed";
+    website_url?: string;
+    seo_score?: number;
+    content_score?: number;
+    ux_score?: number;
+    performance_score?: number;
+    listing_score?: number;
+    business_health_score?: number;
+    page_count?: number;
+    model?: string;
+    collected_at?: string;
+    briefed_at?: string;
+  };
+  sort?: { field: "dedup_key" | "lead" | "agency" | "device" | "status" | "website_url" | "seo_score" | "content_score" | "ux_score" | "performance_score" | "listing_score" | "business_health_score" | "page_count" | "scan_json" | "brief_json" | "model" | "collected_at" | "briefed_at"; dir: "asc" | "desc" };
+  limit?: number;
+  offset?: number;
+}
+/** qualifications — write shape (relations/assets by id; "created_by" is stamped server-side). */
+export interface QualificationsCreate {
+  org_id: string;
+  dedup_key: string;
+  lead: string;
+  agency?: string;
+  device?: string;
+  status?: "pending" | "collecting" | "collected" | "scored" | "briefed" | "failed";
+  website_url?: string;
+  seo_score?: number;
+  content_score?: number;
+  ux_score?: number;
+  performance_score?: number;
+  listing_score?: number;
+  business_health_score?: number;
+  page_count?: number;
+  scan_json?: string;
+  brief_json?: string;
+  model?: string;
+  collected_at?: string;
+  briefed_at?: string;
+}
+export type QualificationsUpdate = Partial<QualificationsCreate>;
 
 /** search_queries — public view; only publicRead fields are ever returned. */
 export interface SearchQueries {
@@ -696,6 +774,19 @@ export function createClient(options: AgentXClientOptions) {
       },
       async create(data: PackagesCreate): Promise<{ id: string }> {
         return request<{ id: string }>("POST", "/packages", undefined, data);
+      },
+    },
+    qualifications: { // requires setUserToken() for non-public access
+      async list(opts: QualificationsListOpts = {}): Promise<Qualifications[]> {
+        const query: Record<string, unknown> = { limit: opts.limit, offset: opts.offset, ...(opts.filter ?? {}) };
+        if (opts.sort) query.sort = opts.sort.field + ":" + opts.sort.dir;
+        return (await request<{ data: Qualifications[] }>("GET", "/qualifications", query)).data;
+      },
+      async get(id: string): Promise<Qualifications> {
+        return (await request<{ data: Qualifications }>("GET", "/qualifications/" + encodeURIComponent(id))).data;
+      },
+      async create(data: QualificationsCreate): Promise<{ id: string }> {
+        return request<{ id: string }>("POST", "/qualifications", undefined, data);
       },
     },
     search_queries: { // requires setUserToken() for non-public access
