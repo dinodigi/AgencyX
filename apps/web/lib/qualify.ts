@@ -210,7 +210,9 @@ const BRIEF_SYSTEM = `You write qualification briefs for a local-marketing agenc
 Be specific and concrete; no filler. Every array item is one crisp sentence or phrase.`;
 
 /** One Claude pass → validated QualificationBrief. Throws on refusal/parse failure. */
-export async function generateBriefJson(input: BriefInput): Promise<{ brief: QualificationBrief; model: string }> {
+export async function generateBriefJson(
+  input: BriefInput,
+): Promise<{ brief: QualificationBrief; model: string; tokens: { input: number; output: number } }> {
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY
   const response = await client.messages.create({
     model: BRIEF_MODEL,
@@ -230,5 +232,9 @@ export async function generateBriefJson(input: BriefInput): Promise<{ brief: Qua
   const text = response.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text;
   if (!text) throw new Error("Claude returned no brief content.");
   const brief = JSON.parse(text) as QualificationBrief;
-  return { brief, model: response.model };
+  return {
+    brief,
+    model: response.model,
+    tokens: { input: response.usage.input_tokens, output: response.usage.output_tokens },
+  };
 }

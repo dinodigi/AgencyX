@@ -8,7 +8,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ListingAuditsCreate } from "@dinosales/agentx-client";
 import type { QualificationScan, RawListing, ScanSite } from "@dinosales/types";
-import { scoreBusinessHealth, scoreContent, scoreListing, scoreSeo, scoreUx } from "@dinosales/types";
+import {
+  cleanLeadDeterministic,
+  leadNeedsAiCleanup,
+  scoreBusinessHealth,
+  scoreContent,
+  scoreListing,
+  scoreSeo,
+  scoreUx,
+} from "@dinosales/types";
 import { parseUsAddress } from "../src/main/qualify/address.ts";
 import {
   crawlSite,
@@ -44,6 +52,41 @@ test("parseUsAddress splits street/city/state/zip and tolerates noise", () => {
   assert.equal(parseUsAddress("Los Angeles, CA"), null); // no zip
   assert.equal(parseUsAddress("just a name 90012"), null); // no state / no city split
   assert.equal(parseUsAddress(undefined), null);
+});
+
+// --- lead cleanup (qualify-click step 0) --------------------------------------
+
+test("cleanLeadDeterministic: emoji, phone format, tracking params, whitespace", () => {
+  const { patch, changes } = cleanLeadDeterministic({
+    business_name: "Raffallo's  Pizza🍕",
+    phone: "323.851.4022",
+    website: "https://locations.papajohns.com/x?utm_source=gmb&y_source=abc&real=1",
+    address: "1657 N La Brea Ave,  Los Angeles, CA 90046, United States",
+  });
+  assert.equal(patch.business_name, "Raffallo's Pizza");
+  assert.equal(patch.phone, "(323) 851-4022");
+  assert.equal(patch.website, "https://locations.papajohns.com/x?real=1");
+  assert.equal(patch.address, "1657 N La Brea Ave, Los Angeles, CA 90046");
+  assert.ok(changes.length >= 3);
+
+  const clean = cleanLeadDeterministic({
+    business_name: "Pizza Worx",
+    phone: "(323) 378-6650",
+    website: "https://www.pizzaworxhollywood.com/",
+    address: "6705 Hollywood Blvd, Los Angeles, CA 90028",
+  });
+  assert.deepEqual(clean.patch, {});
+});
+
+test("leadNeedsAiCleanup flags names/addresses a regex can't fix, passes clean leads", () => {
+  assert.ok(leadNeedsAiCleanup({ business_name: "BEST FCKN PIZZA (HOLLYWOOD)", address: "5907 Hollywood Blvd, Los Angeles, CA 90028", category: "Pizza restaurant" }).length > 0);
+  assert.ok(leadNeedsAiCleanup({ business_name: "The Little Italy - Los Angeles, CA", address: "6541 Hollywood Blvd Ste 101, Los Angeles, CA 90028", category: "Italian restaurant" }).length > 0);
+  assert.ok(leadNeedsAiCleanup({ business_name: "berri's pizza hollywood", address: "7123 Sunset Blvd, Los Angeles, CA 90046", category: "Pizza restaurant" }).length > 0);
+  assert.ok(leadNeedsAiCleanup({ business_name: "United Heating & Air Conditioning", category: "HVAC contractor" }).some((r) => r.includes("address is missing")));
+  assert.deepEqual(
+    leadNeedsAiCleanup({ business_name: "L.A.'S Original Pizzeria", address: "1644 N Las Palmas Ave, Los Angeles, CA 90028", category: "Pizza restaurant" }),
+    [],
+  );
 });
 
 // --- crawler ----------------------------------------------------------------
@@ -241,6 +284,24 @@ test("parseMozReport derives a score when no percent is present, rejects junk", 
   assert.equal(parsed.score, 67); // (2 + 0×0.5) / 3
   assert.equal(parseMozReport({ hello: "world" }), null);
   assert.equal(parseMozReport(null), null);
+});
+
+test("parseMozReport: NeedsAttention gets half credit, scan errors are excluded", () => {
+  // Mirrors the live report shape: Good/NeedsAttention/NotFound/Error statuses.
+  const parsed = parseMozReport({
+    listings: [
+      { source: "Google", listingStatus: "Good" },
+      { source: "Yelp", listingStatus: "Good" },
+      { source: "SuperPages", listingStatus: "NeedsAttention" },
+      { source: "Manta", listingStatus: "NeedsAttention" },
+      { source: "BBB", listingStatus: "NotFound" },
+      { source: "Apple Maps", listingStatus: "Error" },
+    ],
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.checked, 5); // Error excluded — says nothing about the business
+  assert.equal(parsed.found, 4); // Good×2 + NeedsAttention×2
+  assert.equal(parsed.score, 60); // (2 + 0.5×2) / 5
 });
 
 // --- scan serialization ---------------------------------------------------

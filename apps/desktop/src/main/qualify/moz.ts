@@ -54,7 +54,11 @@ function asRecord(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-/** Pull per-directory results out of an arbitrary report JSON, defensively. */
+/** Pull per-directory results out of an arbitrary report JSON, defensively.
+ *  Scoring semantics (verified against a live report 2026-07-14): full credit
+ *  for correct/good listings, HALF credit for needs-attention/incomplete ones,
+ *  and Moz-side scan errors are excluded entirely — an errored network says
+ *  nothing about the business. */
 export function parseMozReport(json: unknown): MozParsed | null {
   const directories: MozDirectoryResult[] = [];
   let percentCorrect: number | undefined;
@@ -90,16 +94,18 @@ export function parseMozReport(json: unknown): MozParsed | null {
   if (directories.length === 0 && percentCorrect === undefined) return null;
 
   const norm = (s: string) => s.toLowerCase();
-  const correct = directories.filter((d) => /correct|complete|good|found/.test(norm(d.status)) && !/incomplete|not/.test(norm(d.status))).length;
-  const incomplete = directories.filter((d) => /incomplete|partial/.test(norm(d.status))).length;
-  const found = directories.filter((d) => !/not[\s_-]?found|missing|absent/.test(norm(d.status))).length;
-  const checked = directories.length;
+  const isError = (d: MozDirectoryResult) => /^error|scan[\s_-]?error/.test(norm(d.status));
+  const scannable = directories.filter((d) => !isError(d));
+  const correct = scannable.filter((d) => /correct|complete|good|found/.test(norm(d.status)) && !/incomplete|not|attention/.test(norm(d.status))).length;
+  const partial = scannable.filter((d) => /incomplete|partial|attention/.test(norm(d.status))).length;
+  const found = scannable.filter((d) => !/not[\s_-]?found|missing|absent/.test(norm(d.status))).length;
+  const checked = scannable.length;
 
   let score: number | undefined;
   if (typeof percentCorrect === "number") {
     score = Math.max(0, Math.min(100, Math.round(percentCorrect <= 1 ? percentCorrect * 100 : percentCorrect)));
   } else if (checked > 0) {
-    score = Math.round((100 * (correct + 0.5 * incomplete)) / checked);
+    score = Math.round((100 * (correct + 0.5 * partial)) / checked);
   }
 
   return { directories, checked, found, score };
@@ -145,7 +151,7 @@ const CAPTCHA = 'iframe[src*="recaptcha"], form#captcha-form, div#recaptcha';
 export interface MozRunOptions {
   signal: AbortSignal;
   onLog: (level: "info" | "warn" | "error", message: string) => void;
-  /** Total budget for submit + poll (report generation runs ~90s). */
+  /** Total budget for submit + poll. A live report took 134s — default leaves headroom. */
   timeoutMs?: number;
   channel?: string;
 }
@@ -153,7 +159,7 @@ export interface MozRunOptions {
 export class MozAuditor {
   async run(input: MozInput, opts: MozRunOptions): Promise<MozRunResult> {
     const submittedAt = new Date().toISOString();
-    const timeoutMs = opts.timeoutMs ?? 150_000;
+    const timeoutMs = opts.timeoutMs ?? 240_000;
     const { chromium } = (await import("playwright-extra")) as unknown as {
       chromium: { use(p: unknown): void; launch(o: Record<string, unknown>): Promise<PwBrowser> };
     };

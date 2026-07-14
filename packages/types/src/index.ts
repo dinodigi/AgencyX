@@ -260,6 +260,145 @@ export interface QualificationScan {
 }
 
 // ---------------------------------------------------------------------------
+// Lead cleanup — runs at qualify time, BEFORE collection, so the Moz form,
+// the Maps lookup, and the crawl all get clean inputs. Deterministic fixes
+// first (free); the AI pass (web-side, one call) only when the heuristics say
+// the lead needs judgment a regex can't provide.
+// ---------------------------------------------------------------------------
+
+export interface UsAddress {
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+}
+
+const COUNTRY_SUFFIX = /,?\s*(united states( of america)?|usa|us)\.?$/i;
+
+/** Split "123 Main St, Los Angeles, CA 90012" into Moz-form fields; null when
+ *  the pieces can't be recovered (callers then skip or repair the address). */
+export function parseUsAddress(raw: string | null | undefined): UsAddress | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/^Address:\s*/i, "").replace(COUNTRY_SUFFIX, "").trim();
+  if (!cleaned) return null;
+  const zipMatch = cleaned.match(/(\d{5})(?:-\d{4})?$/);
+  if (!zipMatch) return null;
+  const zip = zipMatch[1]!;
+  const beforeZip = cleaned.slice(0, zipMatch.index).replace(/[,\s]+$/, "");
+  const stateMatch = beforeZip.match(/(?:^|[,\s])([A-Za-z]{2})$/);
+  if (!stateMatch) return null;
+  const state = stateMatch[1]!.toUpperCase();
+  const beforeState = beforeZip.slice(0, stateMatch.index).replace(/[,\s]+$/, "");
+  const parts = beforeState.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const city = parts[parts.length - 1]!;
+  const street = parts.slice(0, -1).join(", ");
+  if (!street || !city) return null;
+  return { street, city, state, zip };
+}
+
+/** Tracking params platforms staple onto outbound links (mirror of the scraper's list). */
+const TRACKING_PARAM = /^(utm_|gclid$|fbclid$|mc_|_hs|yclid$|msclkid$|dclid$|igshid$|ref$|ref_src$|source$|y_source$)/i;
+
+/** Strip tracking noise + hash from a URL; returns the input when unparseable. */
+export function stripTrackingParams(url: string): string {
+  try {
+    const u = new URL(url.trim());
+    for (const key of [...u.searchParams.keys()]) {
+      if (TRACKING_PARAM.test(key)) u.searchParams.delete(key);
+    }
+    u.hash = "";
+    return u.toString().replace(/\?$/, "");
+  } catch {
+    return url.trim();
+  }
+}
+
+export interface LeadCleanupFields {
+  business_name?: string;
+  address?: string;
+  phone?: string;
+  category?: string;
+  website?: string;
+}
+
+export interface CleanupResult {
+  /** Only the fields that actually changed. */
+  patch: LeadCleanupFields;
+  /** Human-readable summary of what changed ("stripped emoji from name"). */
+  changes: string[];
+}
+
+const collapse = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+/** The free pass: whitespace, emoji, phone formatting, URL tracking junk.
+ *  Never touches meaning — anything requiring judgment goes to the AI pass. */
+export function cleanLeadDeterministic(lead: LeadCleanupFields): CleanupResult {
+  const patch: LeadCleanupFields = {};
+  const changes: string[] = [];
+
+  if (lead.business_name) {
+    let name = collapse(lead.business_name);
+    const deEmojied = name.replace(/[\p{Extended_Pictographic}️]/gu, "").replace(/\s+/g, " ").trim();
+    if (deEmojied !== name && deEmojied.length > 0) {
+      name = deEmojied;
+      changes.push("stripped emoji from name");
+    }
+    if (name !== lead.business_name && name.length > 0) patch.business_name = name;
+  }
+
+  if (lead.phone) {
+    const digits = lead.phone.replace(/[^\d]/g, "");
+    const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    if (ten.length === 10) {
+      const formatted = `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+      if (formatted !== lead.phone.trim()) {
+        patch.phone = formatted;
+        changes.push("normalized phone format");
+      }
+    }
+  }
+
+  if (lead.website) {
+    const cleaned = stripTrackingParams(lead.website);
+    if (cleaned !== lead.website) {
+      patch.website = cleaned;
+      changes.push("stripped tracking params from website");
+    }
+  }
+
+  if (lead.address) {
+    const cleaned = collapse(lead.address.replace(COUNTRY_SUFFIX, ""));
+    if (cleaned !== lead.address && cleaned.length > 0) {
+      patch.address = cleaned;
+      changes.push("tidied address");
+    }
+  }
+
+  if (lead.category) {
+    const cleaned = collapse(lead.category);
+    if (cleaned !== lead.category && cleaned.length > 0) patch.category = cleaned;
+  }
+
+  return { patch, changes };
+}
+
+/** Why (if at all) this lead needs the AI judgment pass. Empty = clean enough. */
+export function leadNeedsAiCleanup(lead: LeadCleanupFields): string[] {
+  const reasons: string[] = [];
+  const name = lead.business_name ?? "";
+  if (/\s[-–—|]\s|\(|@/.test(name)) reasons.push("name carries a branch/location suffix");
+  if (/,\s*[A-Z]{2}\b/.test(name)) reasons.push("name contains a city/state tail");
+  const words = name.split(/\s+/).filter((w) => /[A-Za-z]{2,}/.test(w));
+  if (words.length >= 3 && words.every((w) => w === w.toUpperCase())) reasons.push("name is all-caps");
+  if (words.length >= 2 && name === name.toLowerCase()) reasons.push("name is all-lowercase");
+  if (!lead.address) reasons.push("address is missing");
+  else if (!parseUsAddress(lead.address)) reasons.push("address doesn't parse into street/city/state/zip");
+  if (!lead.category) reasons.push("category is missing");
+  return reasons;
+}
+
+// ---------------------------------------------------------------------------
 // Deterministic scoring (build-order step 4) — every sub-score is computed
 // from concrete scan signals with human-readable reasons, so a score is always
 // explainable ("why 42?"). The AI writes narrative ON TOP of these numbers;

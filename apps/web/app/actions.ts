@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { AgentXError } from "@dinosales/agentx-client";
 import { makeQueryDedupKey, makeQualificationDedupKey } from "@dinosales/types";
 import type { NormalizedSearch } from "@dinosales/ui/search";
+import { cleanLeadDeterministic, leadNeedsAiCleanup, type LeadCleanupFields } from "@dinosales/types";
 import { withClient } from "@/lib/agentx.ts";
+import { aiCleanLead } from "@/lib/cleanup.ts";
 import { computeScores, fetchPerformanceScore, generateBriefJson, parseScan } from "@/lib/qualify.ts";
 
 /** Qualification states whose research results are reviewable. */
@@ -173,6 +175,11 @@ export interface QualifyQueueResult {
  * dedup_key): a fresh lead gets a pending row the desktop claims; an existing
  * failed row is bumped back to pending (the workflow's retry transition); any
  * other status just reports where the job already is.
+ *
+ * FIRST step is lead cleanup — scraped data goes through the free
+ * deterministic pass, and when the heuristics flag judgment work (branch
+ * suffixes, shouty names, broken addresses) the pipeline's first AI call fixes
+ * it — so the Moz form, Maps lookup, and crawl all get clean inputs.
  */
 export async function queueQualification(_prev: QualifyQueueResult, formData: FormData): Promise<QualifyQueueResult> {
   const ctx = await withClient();
@@ -181,6 +188,40 @@ export async function queueQualification(_prev: QualifyQueueResult, formData: Fo
   if (!leadId) return { ok: false, error: "Missing lead." };
 
   try {
+    // ── cleanup-first ───────────────────────────────────────────────────────
+    const lead = await ctx.ax.leads.get(leadId);
+    const fields: LeadCleanupFields = {
+      business_name: lead.business_name,
+      address: lead.address,
+      phone: lead.phone,
+      category: lead.category,
+      website: lead.website,
+    };
+    const det = cleanLeadDeterministic(fields);
+    const combined: LeadCleanupFields = { ...det.patch };
+    const notes = [...det.changes];
+    const merged = { ...fields, ...det.patch };
+    const reasons = leadNeedsAiCleanup(merged);
+    if (reasons.length > 0 && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const ai = await aiCleanLead(merged, reasons);
+        Object.assign(combined, ai.patch);
+        notes.push(...ai.notes);
+        console.log(
+          `[qualify:cleanup] lead ${leadId} AI pass (${ai.model}, ${ai.tokens.input}->${ai.tokens.output} tok) — flagged: ${reasons.join("; ")} — ${ai.notes.join("; ") || "no changes"}`,
+        );
+      } catch (e) {
+        console.warn(`[qualify:cleanup] AI pass failed for lead ${leadId}: ${e instanceof Error ? e.message : String(e)}`);
+        notes.push("AI cleanup unavailable — deterministic fixes only");
+      }
+    }
+    if (Object.keys(combined).length > 0) {
+      await ctx.client.update("leads", leadId, { ...combined });
+      console.log(`[qualify:cleanup] lead ${leadId} patched: ${Object.keys(combined).join(", ")}`);
+    }
+    const cleanupMsg = notes.length > 0 ? ` Cleaned first: ${notes.join("; ")}.` : "";
+
+    // ── then queue the research job ─────────────────────────────────────────
     const res = await ctx.client.upsertQualification({
       org_id: ctx.session.orgId,
       dedup_key: makeQualificationDedupKey(ctx.session.orgId, leadId),
@@ -188,15 +229,16 @@ export async function queueQualification(_prev: QualifyQueueResult, formData: Fo
     });
     if (!res.alreadySynced) {
       revalidatePath(`/leads/${leadId}`);
-      return { ok: true, status: "pending", message: "Queued — the desktop collects it next time it's idle." };
+      return { ok: true, status: "pending", message: `Queued — the desktop collects it next time it's idle.${cleanupMsg}` };
     }
     const row = await ctx.ax.qualifications.get(res.id);
     if (row.status === "failed") {
       await ctx.client.update("qualifications", res.id, { status: "pending" });
       revalidatePath(`/leads/${leadId}`);
-      return { ok: true, status: "pending", message: "Re-queued after a failure." };
+      return { ok: true, status: "pending", message: `Re-queued after a failure.${cleanupMsg}` };
     }
-    return { ok: true, status: row.status, message: `Already ${row.status ?? "queued"}.` };
+    revalidatePath(`/leads/${leadId}`);
+    return { ok: true, status: row.status, message: `Already ${row.status ?? "queued"}.${cleanupMsg}` };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -292,11 +334,16 @@ export async function scoreAndBrief(_prev: BriefResult, formData: FormData): Pro
     });
 
     // 2 · the brief (grounded in the agency's actual catalog)
+    console.log(
+      `[qualify:score] lead ${leadId} — ${Object.entries(scorePatch)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ")}${performance ? "" : " (performance unavailable)"}`,
+    );
     const catalog = await ctx.ax.packages
       .list({ filter: { active: true }, limit: 50 })
       .then((rows) => rows.map((p) => ({ name: p.name, summary: p.summary, price: p.price, billing: p.billing })))
       .catch(() => []);
-    const { brief, model } = await generateBriefJson({
+    const { brief, model, tokens } = await generateBriefJson({
       leadName: lead.business_name,
       category: lead.category,
       address: lead.address,
@@ -309,6 +356,7 @@ export async function scoreAndBrief(_prev: BriefResult, formData: FormData): Pro
       scores,
       catalog,
     });
+    console.log(`[qualify:brief] lead ${leadId} — ${model}, ${tokens.input}->${tokens.output} tok`);
     await ctx.client.update("qualifications", qualId, {
       ...(qual.status !== "briefed" ? { status: "briefed" } : {}),
       brief_json: JSON.stringify(brief),
