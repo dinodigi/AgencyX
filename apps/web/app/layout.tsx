@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { Nav } from "@/components/Nav.tsx";
+import { TopBar } from "@/components/TopBar.tsx";
+
+/** Apply the persisted theme before first paint (no flash). Dark = default. */
+const THEME_SCRIPT = `try{if(localStorage.getItem("ax-theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}`;
 
 export const metadata: Metadata = {
   title: "AgencyX",
@@ -15,11 +19,16 @@ export const dynamic = "force-dynamic";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const shell = (
-    <html lang="en">
+    // suppressHydrationWarning: the theme script sets data-theme pre-hydration.
+    <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen">
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <div className="flex min-h-screen">
           <Nav />
-          <main className="flex-1 min-w-0">{children}</main>
+          <main className="min-w-0 flex-1">
+            <TopBar />
+            {children}
+          </main>
         </div>
       </body>
     </html>

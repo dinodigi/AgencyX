@@ -3,15 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import {
-  ClerkLoading,
-  ClerkLoaded,
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  UserButton,
-  OrganizationSwitcher,
-} from "@clerk/nextjs";
 
 const ICONS: Record<string, ReactNode> = {
   leads: (
@@ -78,10 +69,6 @@ const GROUPS: { label: string; links: { href: string; label: string; icon: keyof
   { label: "System", links: [{ href: "/devices", label: "Devices", icon: "devices" }] },
 ];
 
-// Clerk components require ClerkProvider (mounted only when configured), so the
-// auth UI is gated on the same public key the provider is.
-const clerkOn = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-
 export function Nav() {
   const path = usePathname();
   return (
@@ -128,35 +115,7 @@ export function Nav() {
         </div>
       ))}
 
-      <div className="mt-auto flex flex-col gap-3 border-t border-[var(--color-border)] pt-4">
-        {clerkOn ? (
-          <>
-            {/* Always render a visible state so the auth area never blanks. */}
-            <ClerkLoading>
-              <span className="px-3 py-2 text-xs text-[var(--color-muted)]">Loading…</span>
-            </ClerkLoading>
-            <ClerkLoaded>
-              <SignedIn>
-                <OrganizationSwitcher
-                  hidePersonal
-                  appearance={{ elements: { rootBox: "w-full", organizationSwitcherTrigger: "w-full justify-between" } }}
-                />
-                <div className="flex items-center gap-2 px-1">
-                  <UserButton />
-                  <span className="text-xs text-[var(--color-muted)]">Account</span>
-                </div>
-              </SignedIn>
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="btn-primary w-full px-3 py-2 text-sm">Sign in</button>
-                </SignInButton>
-              </SignedOut>
-            </ClerkLoaded>
-          </>
-        ) : (
-          <div className="px-3 py-2 text-xs text-[var(--color-muted)]">Internal · tenant #1 · Clerk off</div>
-        )}
-      </div>
+      {/* Account + org switcher moved to the TopBar (top-right). */}
     </nav>
   );
 }

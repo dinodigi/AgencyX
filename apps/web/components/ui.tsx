@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="animate-in sticky top-0 z-10 flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_82%,transparent)] px-8 py-5 backdrop-blur-md">
+    <div className="animate-in sticky top-12 z-10 flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_82%,transparent)] px-8 py-5 backdrop-blur-md">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-[var(--color-muted)]">{subtitle}</p>}
@@ -15,7 +15,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`animate-in rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.8)] ${className}`}
+      className={`animate-in rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--card-shadow)] ${className}`}
     >
       {children}
     </div>
