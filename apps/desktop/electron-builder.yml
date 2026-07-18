@@ -23,6 +23,10 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  # Version-less, space-less asset name so the web app can link the permanent
+  # "latest" URL: github.com/dinodigi/AgencyX/releases/latest/download/AgencyX-Setup.exe
+  # (each release still carries its own latest.yml for electron-updater).
+  artifactName: AgencyX-Setup.${ext}
 nsis:
   oneClick: false
   perMachine: false

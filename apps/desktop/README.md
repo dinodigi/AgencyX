@@ -52,11 +52,13 @@ Source-agnostic engine driving a `ScrapeSource`:
 
 ## Auth (Clerk, in the renderer)
 `VITE_CLERK_PUBLISHABLE_KEY` set → the renderer shows the **real Clerk sign-in** (`ClerkAuth.tsx`): sign in, pick/create an org, and `ClerkTokenBridge` pushes the session token to main and re-pushes a fresh one every 45s. Unset → the dev paste-form (`views/SignIn.tsx`) for mock testing. Both call `auth:setSession`, so main is identical either way.
-- **Prod caveat:** Clerk's cookie session doesn't work on `file://`. Dev (`pnpm dev`, served from localhost) is fine; a packaged build must serve the renderer over loopback — TODO before shipping.
+- **Packaged builds serve the renderer over loopback** (`serve-renderer.ts`, fixed `http://127.0.0.1:43117`) because Clerk's cookie session can't exist on `file://`. The fixed port keeps the origin — and the persisted session — stable across launches. The committed `.env.production` supplies the publishable key to `vite build`. (When moving to a `pk_live` instance, allowlist that origin in Clerk.)
 
 ## Not wired yet (tracked)
-- Serve the packaged renderer over loopback (for Clerk in prod).
 - Real Google selectors tuned on live output; coverage soft-gate before a run.
 
-## Release pipeline (W1 exit gate)
-`.github/workflows/desktop-release.yml` (tag-triggered) → electron-builder → GitHub Releases → electron-updater self-update. Needs the Authenticode cert secrets (`CSC_LINK`, `CSC_KEY_PASSWORD`) — roadmap open decision #2. **Prove this end-to-end on a dummy build before W2.**
+## Release pipeline
+`.github/workflows/desktop-release.yml`: push a `v*` tag → electron-builder → GitHub Releases (`AgencyX-Setup.exe`, stable name) → electron-updater self-update on next launch. The web Devices page links `releases/latest/download/AgencyX-Setup.exe`.
+- **Required repo secret:** `AGENTX_DELIVERY_TOKEN` — baked into the main bundle by `build.mjs` (delivery-scoped; tenant data still gated by the user's Clerk JWT). Tagged builds fail fast without it.
+- **Optional secrets:** `CSC_LINK` + `CSC_KEY_PASSWORD` (Authenticode, roadmap open decision #2). Unsigned installers work but trip SmartScreen ("More info → Run anyway") — fine internally, fix before external tenants.
+- `workflow_dispatch` runs build an unpublished installer artifact for dry-runs.

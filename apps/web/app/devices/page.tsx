@@ -6,6 +6,10 @@ import { fmtRelative } from "@/lib/format.ts";
 
 export const dynamic = "force-dynamic";
 
+// Permanent "latest release" asset URL — electron-builder publishes the installer
+// under this fixed name (apps/desktop/electron-builder.yml artifactName).
+const DESKTOP_DOWNLOAD_URL = "https://github.com/dinodigi/AgencyX/releases/latest/download/AgencyX-Setup.exe";
+
 export default async function DevicesPage() {
   if (!isConfigured()) return <NotConfigured />;
   const status = await getAuthStatus();
@@ -23,12 +27,23 @@ export default async function DevicesPage() {
 
   return (
     <div>
-      <PageHeader title="Devices" subtitle={`${rows.length} registered`} />
+      <PageHeader
+        title="Devices"
+        subtitle={`${rows.length} registered`}
+        actions={
+          <a href={DESKTOP_DOWNLOAD_URL} className="btn-primary px-4 py-2 text-sm" title="Windows installer — updates itself after install">
+            Download desktop app ↓
+          </a>
+        }
+      />
       <div className="p-8">
         {error ? (
           <EmptyState title="Couldn't load devices" hint={error} />
         ) : rows.length === 0 ? (
-          <EmptyState title="No devices yet" hint="A desktop scraper registers here on first sign-in." />
+          <EmptyState
+            title="No devices yet"
+            hint="Download the desktop app above, install it, and sign in — the device registers here. Windows may show a SmartScreen warning (unsigned installer): choose More info → Run anyway."
+          />
         ) : (
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">

@@ -28,6 +28,17 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # A tagged release without the delivery token would ship an installer whose
+      # sign-in can't reach AgentX. Fail fast instead of publishing a dud.
+      - name: Require AGENTX_DELIVERY_TOKEN on tagged releases
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.AGENTX_DELIVERY_TOKEN }}" ]; then
+            echo "::error::Repo secret AGENTX_DELIVERY_TOKEN is not set (Settings → Secrets → Actions). The packaged app needs it baked in."
+            exit 1
+          fi
+
       # electron-builder rebuilds native deps (better-sqlite3, keytar) for
       # Electron's ABI during packaging; windows-latest has the C++ toolchain.
       # If the rebuild is imperfect the app still runs (in-memory/file fallbacks).
@@ -35,6 +46,10 @@ jobs:
         run: pnpm --filter @dinosales/desktop ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'dist' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the main bundle by build.mjs (delivery-scoped; data access
+          # still requires the user's Clerk JWT — see apps/desktop/.env.example).
+          AGENTX_DELIVERY_TOKEN: ${{ secrets.AGENTX_DELIVERY_TOKEN }}
+          # Clerk publishable key comes from the committed apps/desktop/.env.production.
           # Code signing (§7.3) — OPTIONAL. Set these repo secrets to sign the
           # installer (kills the SmartScreen warning); without them it's unsigned.
           CSC_LINK: ${{ secrets.CSC_LINK }}

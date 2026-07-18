@@ -10,5 +10,7 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
+# Publishable-key-only build config (no secrets) — see apps/desktop/.env.production.
+!.env.production
 *.local.json
 .DS_Store

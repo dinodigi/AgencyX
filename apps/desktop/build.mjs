@@ -26,6 +26,12 @@ const common = {
   sourcemap: true,
   plugins: [externalizeNpm],
   logLevel: "info",
+  define: {
+    // Release builds bake the delivery-scoped token in (CI secret). It's a
+    // project identifier, not a tenant-data grant — reads/writes still require
+    // the user's Clerk JWT (see .env.example). Empty when unset (dev/PR builds).
+    __EMBEDDED_DELIVERY_TOKEN__: JSON.stringify(process.env.AGENTX_DELIVERY_TOKEN ?? ""),
+  },
 };
 
 await build({ ...common, entryPoints: ["src/main/index.ts"], outfile: "dist/main/index.js" });

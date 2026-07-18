@@ -27,11 +27,16 @@ import { AutoRunController } from "./autorun.ts";
 import { QualifyRunner, type QualifyJobRow } from "./qualify/job.ts";
 import { PlaywrightPageReader } from "./qualify/page-reader.ts";
 import { MozAuditor } from "./qualify/moz.ts";
+import { serveRenderer } from "./serve-renderer.ts";
 
 // The delivery-scoped project token is baked at build time (public read/write
 // is still gated by the user JWT, so this is a project identifier, not a secret
-// that grants tenant data on its own). Injected via env for now.
-const DELIVERY_TOKEN = process.env.AGENTX_DELIVERY_TOKEN ?? "";
+// that grants tenant data on its own). Release builds embed it via the esbuild
+// define in build.mjs (CI secret); env still wins for local runs.
+declare const __EMBEDDED_DELIVERY_TOKEN__: string | undefined;
+const DELIVERY_TOKEN =
+  process.env.AGENTX_DELIVERY_TOKEN ??
+  (typeof __EMBEDDED_DELIVERY_TOKEN__ === "string" ? __EMBEDDED_DELIVERY_TOKEN__ : "");
 const IS_DEV = !app.isPackaged;
 
 let win: BrowserWindow | null = null;
@@ -93,7 +98,9 @@ async function createWindow(): Promise<void> {
     await win.loadURL(process.env.VITE_DEV_SERVER_URL);
     win.webContents.openDevTools({ mode: "detach" });
   } else {
-    await win.loadFile(join(__dirname, "../renderer/index.html"));
+    // No file:// — Clerk's session needs a real (stable) http origin.
+    const origin = await serveRenderer(join(__dirname, "../renderer"), (msg) => log("warn", msg));
+    await win.loadURL(`${origin}/`);
   }
 }
 
@@ -658,7 +665,20 @@ function stopQualify(): QualRunState {
   return qualState;
 }
 
+// One instance only: a second would fight over the renderer port and the outbox.
+const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return; // quitting — don't boot services
   const userData = app.getPath("userData");
   deviceId = getOrCreateDeviceId(join(userData, "device-id"));
 

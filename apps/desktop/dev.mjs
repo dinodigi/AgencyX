@@ -29,7 +29,11 @@ const externalizeNpm = {
     });
   },
 };
-const common = { bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, plugins: [externalizeNpm] };
+const common = {
+  bundle: true, platform: "node", target: "node20", format: "cjs", sourcemap: true, plugins: [externalizeNpm],
+  // Dev never embeds the token — it comes from .env at runtime (build.mjs bakes it for releases).
+  define: { __EMBEDDED_DELIVERY_TOKEN__: JSON.stringify("") },
+};
 
 const server = await createServer({ configFile: "vite.config.ts" });
 await server.listen();
