@@ -8,6 +8,41 @@ Entries before 2026-07-28 are reconstructed from git history and
 
 ---
 
+## Sprint 01
+
+### AX-002 · Desktop v0.1.1 — first published release (2026-07-28)
+`AgencyX-Setup.exe` (83.8 MB) is live at
+[releases/latest](https://github.com/dinodigi/AgencyX/releases/latest), with
+`latest.yml` + `.blockmap` alongside it for electron-updater.
+
+Took three commits and one instructive failure:
+- The first tagged build died in electron-builder — the `@dinosales/*` workspace
+  packages were runtime `dependencies`, so it tried to collect them from
+  `../../packages/*`, outside `appDir`, which asar packing refuses. They're
+  build-time only (esbuild inlines them into `dist/`), so they moved to
+  `devDependencies` (`b6a8518`).
+- The `v0.1.0` tag couldn't be re-pointed at the fix, so the version bumped to
+  0.1.1 (`8a4c6ec`) — which also keeps the git tag and the electron-builder
+  release name in step, since electron-builder names releases from
+  `package.json`, not from the tag.
+- electron-builder **drafts** releases by default: run 30344497513 was green
+  while nothing was publicly visible. Publishing the draft is what made
+  `/releases/latest/download/…` resolve — verified via the API
+  (`latest → v0.1.1`, `draft=false`).
+
+*Proof:* CI run 30344497513 green on every step; 41 desktop tests green locally;
+`releases/latest` resolves to v0.1.1 with the installer asset present.
+
+### Desktop download in the web app (2026-07-28)
+The download link moved out of `/devices` and into the sidebar, pinned at the
+bottom so it's reachable from every page — and it renders **signed-out**, so a
+new user can install before they have an account. URL and the
+unsigned/SmartScreen wording now live in one module (`apps/web/lib/desktop.ts`)
+instead of being inlined at the call site. *Proof:* rendered on the dev server —
+sidebar link resolves to the release asset, no console errors, typecheck green.
+
+---
+
 ## Pre-tracker (2026-07-12 → 2026-07-18)
 
 ### Desktop release pipeline — `a040b40` (2026-07-18)

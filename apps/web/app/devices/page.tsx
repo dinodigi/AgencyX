@@ -3,12 +3,9 @@ import { getAuthStatus } from "@/lib/auth.ts";
 import { PageHeader, Card, EmptyState, NotConfigured } from "@/components/ui.tsx";
 import { AuthGate } from "@/components/AuthGate.tsx";
 import { fmtRelative } from "@/lib/format.ts";
+import { DESKTOP_DOWNLOAD_URL, DESKTOP_DOWNLOAD_HINT } from "@/lib/desktop.ts";
 
 export const dynamic = "force-dynamic";
-
-// Permanent "latest release" asset URL — electron-builder publishes the installer
-// under this fixed name (apps/desktop/electron-builder.yml artifactName).
-const DESKTOP_DOWNLOAD_URL = "https://github.com/dinodigi/AgencyX/releases/latest/download/AgencyX-Setup.exe";
 
 export default async function DevicesPage() {
   if (!isConfigured()) return <NotConfigured />;
@@ -31,7 +28,7 @@ export default async function DevicesPage() {
         title="Devices"
         subtitle={`${rows.length} registered`}
         actions={
-          <a href={DESKTOP_DOWNLOAD_URL} className="btn-primary px-4 py-2 text-sm" title="Windows installer — updates itself after install">
+          <a href={DESKTOP_DOWNLOAD_URL} className="btn-primary px-4 py-2 text-sm" title={DESKTOP_DOWNLOAD_HINT}>
             Download desktop app ↓
           </a>
         }

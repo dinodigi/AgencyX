@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { DESKTOP_DOWNLOAD_URL, DESKTOP_DOWNLOAD_HINT } from "@/lib/desktop.ts";
 
 const ICONS: Record<string, ReactNode> = {
   leads: (
@@ -49,6 +50,14 @@ const ICONS: Record<string, ReactNode> = {
     </svg>
   ),
 };
+
+const DOWNLOAD_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 3v12" />
+    <path d="m7 12 5 5 5-5" />
+    <path d="M4 21h16" />
+  </svg>
+);
 
 const GROUPS: { label: string; links: { href: string; label: string; icon: keyof typeof ICONS }[] }[] = [
   { label: "Pipeline", links: [{ href: "/leads", label: "Leads", icon: "leads" }] },
@@ -116,6 +125,21 @@ export function Nav() {
       ))}
 
       {/* Account + org switcher moved to the TopBar (top-right). */}
+
+      {/* Pinned to the bottom: the desktop client is what actually runs the
+          scrapes, so it has to be reachable from every page — not just from
+          /devices, where you'd only look once you already knew about it. */}
+      <a
+        href={DESKTOP_DOWNLOAD_URL}
+        title={DESKTOP_DOWNLOAD_HINT}
+        className="group mt-auto flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-2)_60%,transparent)] px-3 py-2.5 hover:border-[var(--color-brand-2)] hover:bg-[var(--color-surface-2)]"
+      >
+        <span className="text-[var(--color-muted)] group-hover:text-[var(--color-brand-2)]">{DOWNLOAD_ICON}</span>
+        <span className="min-w-0 leading-tight">
+          <span className="block text-sm font-medium text-[var(--color-ink)]">Desktop app</span>
+          <span className="block text-[11px] text-[var(--color-muted)]">Windows installer</span>
+        </span>
+      </a>
     </nav>
   );
 }

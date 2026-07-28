@@ -12,7 +12,7 @@ they need a tag, a live run, and honest docs.
 | ID | Task | Owner | Size | Status |
 |---|---|---|---|---|
 | AX-001 | Add repo secret `AGENTX_DELIVERY_TOKEN` | dino | S | **done** |
-| AX-002 | Cut the first release build | claude | S | **review** — draft awaiting publish |
+| AX-002 | Cut and publish the first release | claude | S | **done** — v0.1.1 live |
 | AX-003 | Ship `v0.1.2` to prove self-update end-to-end (W1 exit gate) | claude | M | todo |
 | AX-024 | Decide `releaseType` — keep drafting or auto-publish | claude+dino | S | todo |
 | AX-006 | Live tuning: Maps deep re-scrape lookup match | claude | M | todo |
@@ -31,9 +31,8 @@ they need a tag, a live run, and honest docs.
 
 ## Blockers
 
-- ~~AX-001 blocks AX-002 blocks AX-003~~ — cleared 2026-07-28.
-- **AX-003 needs AX-002 published**, not just built: electron-updater cannot
-  read draft releases, so the self-update gate can't run against a draft.
+- ~~AX-001 blocks AX-002 blocks AX-003~~ — cleared 2026-07-28. The whole release
+  chain is unblocked; AX-003 now has a published baseline to update from.
 - **AX-006 / AX-009 need a real machine + live Google + Moz** — they can't be
   done from tests alone.
 
@@ -61,9 +60,20 @@ Two things worth remembering:
   publishes nothing visible. Caught because the public releases API returned
   empty while the run was green → AX-024.
 
-Run 30344497513 green end-to-end. Draft 0.1.1 holds `AgencyX-Setup.exe`
+Run 30344497513 green end-to-end. Draft 0.1.1 held `AgencyX-Setup.exe`
 (83.8 MB), `AgencyX-Setup.exe.blockmap`, `latest.yml` (330 B). 41 desktop tests
 green locally.
+
+**2026-07-28 (end of day)** — Draft published; `releases/latest` now resolves to
+v0.1.1 with `draft=false`. **AX-002 done.** Followed it into the web app: the
+download link was only on `/devices`, so it moved to the sidebar (pinned bottom,
+renders signed-out) and the URL + SmartScreen wording were pulled into
+`apps/web/lib/desktop.ts` so there's one definition. Verified on the dev server.
+
+Noticed while verifying, not acted on: the local dev server logs
+`Clerk: Refreshing the session token resulted in an infinite redirect loop —
+your Clerk instance keys do not match`. Pre-existing local env issue, unrelated
+to this work, but it will block local sign-in testing → AX-026.
 
 ## Retro
 

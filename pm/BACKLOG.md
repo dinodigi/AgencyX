@@ -7,13 +7,12 @@ Tasks in the active sprint are marked **→ S01** etc.
 
 ## 1 · Desktop release — v0.1.0 (the last thing we were on)
 
-First green release build landed 2026-07-28 (`8a4c6ec`, tag `v0.1.1`) after a
-packaging fix. The installer exists; it's sitting in a **draft** release.
+**v0.1.1 is published and downloadable** (2026-07-28). Remaining work here is
+the self-update gate and signing.
 
 | ID | Task | Owner | Size | Status | Notes |
 |---|---|---|---|---|---|
-| AX-002 | Publish the v0.1.1 draft release | dino | S | review → S01 | Build is **green** and the draft carries `AgencyX-Setup.exe` (83.8 MB) + `.blockmap` + `latest.yml`. electron-builder drafts by default; **until it's published, electron-updater can't see it and `releases/latest/download/…` 404s**, so the web download button stays dead. |
-| AX-003 | Ship `v0.1.2` to prove self-update end-to-end | claude | M | todo → S01 | **W1 exit gate.** Was going to be v0.1.1, but that number got spent recovering from the packaging bug. Needs AX-002 published first — updater can't see drafts. |
+| AX-003 | Ship `v0.1.2` to prove self-update end-to-end | claude | M | todo → S01 | **W1 exit gate.** Was going to be v0.1.1, but that number got spent recovering from the packaging bug. Now unblocked — v0.1.1 is published, so there's a real baseline to update *from*: install v0.1.1, ship v0.1.2, watch it self-update. |
 | AX-024 | Decide `releaseType` — keep drafting or auto-publish | claude+dino | S | todo → S01 | Default drafts every release, so each one needs a manual publish click. Setting `releaseType: release` in `electron-builder.yml` makes tags publish straight away. Draft-by-default is the safer habit while unsigned; worth a deliberate call rather than rediscovering it each time. |
 | AX-025 | Delete the stale `v0.1.0` tag | dino | S | todo | Points at the pre-fix commit `23def18` with no release attached. Harmless but reads like a shipped version. Bin icon at github.com/dinodigi/AgencyX/tags, then `git tag -d v0.1.0` locally. |
 | AX-004 | Decide + order Authenticode cert (OV vs EV) | dino | M | todo | Roadmap open decision #2. Validation lead time is long; needed before any external tenant and for a clean SmartScreen. |
@@ -49,6 +48,7 @@ proof and doc reconciliation**, not code.
 | AX-016 | Org onboarding flow (Clerk org → JWT claim → Agencies row) | claude | M | todo | Bootstrap ordering matters; currently only the internal test org exists. |
 | AX-017 | Lead-level ZIP filter (relation hop) | claude | S | todo | Delivery filters are equality-only — needs a precomputed field, same pattern as `has_website`. |
 | AX-018 | Settings screen in the web app | claude | M | todo | Last unbuilt W3 screen. |
+| AX-026 | Fix the local Clerk key mismatch | dino | S | todo | The dev server logs `Refreshing the session token resulted in an infinite redirect loop — your Clerk instance keys do not match`. `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` in `apps/web/.env.local` must come from the *same* Clerk instance. Blocks local signed-in testing; spotted 2026-07-28. |
 | AX-019 | Selector maintenance | claude | S | recurring | Standing cost line. Google DOM churn is expected; one-file fix by design (`scraper/selectors.ts`). Budget a slot each sprint. |
 
 ## 5 · Next phase — Build & propose (Phase 4)
