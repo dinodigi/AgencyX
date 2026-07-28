@@ -8,6 +8,11 @@ Two independent targets: the **web app → Render** (SaaS backend UI) and the **
 
 The blueprint is [`render.yaml`](render.yaml) (a `lead-engine-web` Node web service).
 
+**Live URL: <https://lead-engine-web-n1c5.onrender.com>** — note the `-n1c5` suffix.
+Render appends one when the plain subdomain is taken, and `lead-engine-web.onrender.com`
+belongs to an unrelated app, so guessing the URL from the service name lands you on
+someone else's site.
+
 **One-time setup (you):**
 1. Render dashboard → **New → Blueprint** → connect this repo (`dinodigi/AgencyX`). Render reads `render.yaml`.
 2. Set the four secret env vars (marked `sync: false`, so they're prompted in the dashboard, never in git):

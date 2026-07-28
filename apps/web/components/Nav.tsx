@@ -81,9 +81,15 @@ const GROUPS: { label: string; links: { href: string; label: string; icon: keyof
 export function Nav() {
   const path = usePathname();
   return (
-    <nav className="flex w-60 shrink-0 flex-col gap-1 border-r border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+    // sticky + h-screen + self-start makes the sidebar its own viewport-height
+    // column. Without them it's a flex child stretched to the full DOCUMENT
+    // height, so on a long page (settings, a big lead table) the pinned footer
+    // sits thousands of pixels down and you have to scroll to the end to reach
+    // it. self-start is the part that's easy to miss: a stretched flex item
+    // can't stick.
+    <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col self-start border-r border-[var(--color-border)] bg-[var(--color-surface)]">
       {/* Brand */}
-      <Link href="/leads" className="mb-4 flex items-center gap-2.5 px-2 py-2">
+      <Link href="/leads" className="mx-4 mt-4 mb-4 flex items-center gap-2.5 px-2 py-2">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[image:linear-gradient(135deg,var(--color-brand),var(--color-brand-2))] text-[13px] font-black tracking-tight text-white shadow-[0_4px_14px_-4px_color-mix(in_srgb,var(--color-brand)_80%,transparent)]">
           AX
         </span>
@@ -92,54 +98,60 @@ export function Nav() {
         </span>
       </Link>
 
-      {GROUPS.map((g) => (
-        <div key={g.label} className="mb-2">
-          <div className="px-3 pb-1.5 text-[10px] font-semibold tracking-[0.14em] text-[var(--color-muted)] uppercase">
-            {g.label}
+      {/* Only the link list scrolls — the footer under it stays put even if we
+          add enough sections to overflow a short window. */}
+      <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-4">
+        {GROUPS.map((g) => (
+          <div key={g.label} className="mb-2">
+            <div className="px-3 pb-1.5 text-[10px] font-semibold tracking-[0.14em] text-[var(--color-muted)] uppercase">
+              {g.label}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {g.links.map((l) => {
+                const active = path === l.href || path.startsWith(l.href + "/");
+                return (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={`group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm ${
+                      active
+                        ? "bg-[var(--color-surface-2)] font-medium text-[var(--color-ink)]"
+                        : "text-[var(--color-muted)] hover:bg-[color-mix(in_srgb,var(--color-surface-2)_60%,transparent)] hover:text-[var(--color-ink)]"
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-[image:linear-gradient(180deg,var(--color-brand),var(--color-brand-2))]" />
+                    )}
+                    <span className={active ? "text-[var(--color-brand-2)]" : "text-[var(--color-muted)] group-hover:text-[var(--color-ink)]"}>
+                      {ICONS[l.icon]}
+                    </span>
+                    {l.label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex flex-col gap-0.5">
-            {g.links.map((l) => {
-              const active = path === l.href || path.startsWith(l.href + "/");
-              return (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className={`group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm ${
-                    active
-                      ? "bg-[var(--color-surface-2)] font-medium text-[var(--color-ink)]"
-                      : "text-[var(--color-muted)] hover:bg-[color-mix(in_srgb,var(--color-surface-2)_60%,transparent)] hover:text-[var(--color-ink)]"
-                  }`}
-                >
-                  {active && (
-                    <span className="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-[image:linear-gradient(180deg,var(--color-brand),var(--color-brand-2))]" />
-                  )}
-                  <span className={active ? "text-[var(--color-brand-2)]" : "text-[var(--color-muted)] group-hover:text-[var(--color-ink)]"}>
-                    {ICONS[l.icon]}
-                  </span>
-                  {l.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
 
       {/* Account + org switcher moved to the TopBar (top-right). */}
 
-      {/* Pinned to the bottom: the desktop client is what actually runs the
-          scrapes, so it has to be reachable from every page — not just from
-          /devices, where you'd only look once you already knew about it. */}
-      <a
-        href={DESKTOP_DOWNLOAD_URL}
-        title={DESKTOP_DOWNLOAD_HINT}
-        className="group mt-auto flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-2)_60%,transparent)] px-3 py-2.5 hover:border-[var(--color-brand-2)] hover:bg-[var(--color-surface-2)]"
-      >
-        <span className="text-[var(--color-muted)] group-hover:text-[var(--color-brand-2)]">{DOWNLOAD_ICON}</span>
-        <span className="min-w-0 leading-tight">
-          <span className="block text-sm font-medium text-[var(--color-ink)]">Desktop app</span>
-          <span className="block text-[11px] text-[var(--color-muted)]">Windows installer</span>
-        </span>
-      </a>
+      {/* Pinned footer — the desktop client is what actually runs the scrapes,
+          so it has to be reachable from every page, not just /devices, which
+          you'd only visit once you already knew about it. */}
+      <div className="border-t border-[var(--color-border)] p-4">
+        <a
+          href={DESKTOP_DOWNLOAD_URL}
+          title={DESKTOP_DOWNLOAD_HINT}
+          className="group flex items-center gap-2.5 rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface-2)_60%,transparent)] px-3 py-2.5 hover:border-[var(--color-brand-2)] hover:bg-[var(--color-surface-2)]"
+        >
+          <span className="text-[var(--color-muted)] group-hover:text-[var(--color-brand-2)]">{DOWNLOAD_ICON}</span>
+          <span className="min-w-0 leading-tight">
+            <span className="block text-sm font-medium text-[var(--color-ink)]">Desktop app</span>
+            <span className="block text-[11px] text-[var(--color-muted)]">Windows installer</span>
+          </span>
+        </a>
+      </div>
     </nav>
   );
 }
