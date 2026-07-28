@@ -17,15 +17,6 @@ importers:
       '@clerk/clerk-react':
         specifier: ^5.22.0
         version: 5.61.8(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@dinosales/agentx-client':
-        specifier: workspace:*
-        version: link:../../packages/agentx-client
-      '@dinosales/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      '@dinosales/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       better-sqlite3:
         specifier: ^11.8.0
         version: 11.10.0
@@ -45,6 +36,15 @@ importers:
         specifier: ^2.11.2
         version: 2.11.2(playwright-extra@4.3.6(playwright-core@1.61.1))
     devDependencies:
+      '@dinosales/agentx-client':
+        specifier: workspace:*
+        version: link:../../packages/agentx-client
+      '@dinosales/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@dinosales/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@types/better-sqlite3':
         specifier: ^7.6.12
         version: 7.6.13

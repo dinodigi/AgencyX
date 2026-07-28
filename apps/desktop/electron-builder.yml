@@ -15,6 +15,11 @@ directories:
 files:
   - dist/**
   - package.json
+# The @dinosales/* workspace packages are devDependencies ON PURPOSE: esbuild
+# bundles their TS straight into dist/ (see build.mjs), so they're build-time
+# only. As runtime `dependencies` electron-builder tries to collect them from
+# ../../packages/* and dies with "must be under apps/desktop/" — pnpm symlinks
+# them outside appDir, which asar packing refuses.
 # Native modules are unpacked so they load at runtime.
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"

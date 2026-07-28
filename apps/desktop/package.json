@@ -19,9 +19,6 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.22.0",
-    "@dinosales/agentx-client": "workspace:*",
-    "@dinosales/types": "workspace:*",
-    "@dinosales/ui": "workspace:*",
     "better-sqlite3": "^11.8.0",
     "electron-updater": "^6.3.9",
     "keytar": "^7.9.0",
@@ -30,6 +27,9 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
+    "@dinosales/agentx-client": "workspace:*",
+    "@dinosales/types": "workspace:*",
+    "@dinosales/ui": "workspace:*",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
