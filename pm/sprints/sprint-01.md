@@ -75,6 +75,28 @@ Noticed while verifying, not acted on: the local dev server logs
 your Clerk instance keys do not match`. Pre-existing local env issue, unrelated
 to this work, but it will block local sign-in testing → AX-026.
 
+**2026-07-28 (incident)** — The installed v0.1.1 desktop app failed at runtime:
+`device registration failed: this token is mcp-scoped (authoring)`. The value in
+`apps/desktop/.env` named `AGENTX_DELIVERY_TOKEN` was the **MCP** token, so a
+full-trust credential got baked into a public installer. Nothing in the chain
+checked the token's scope — the secret guard only checked that *something* was
+set, and the name was taken at face value all the way through.
+
+Remediation is AX-027 (rotate) and AX-028 (delete the release); both are the
+user's to do and both were still open at end of day. AX-029 tracks getting the
+real delivery token into `.env` and the repo secret.
+
+Built the missing guard (`check-token.mjs`): it asks the delivery API what the
+token actually is before packaging, and fails the release on either
+"mcp-scoped" or "invalid or missing project token". Grounded in the live API's
+real responses rather than guessed — a bogus token passed the first version,
+which is how the second failure mode got found. Running it locally is what
+proved `.env` still holds the MCP token.
+
+Lesson worth keeping: **a variable's name is not evidence of its contents.** The
+reasoning that a delivery token is safe to ship was right; the premise that the
+file held one was never tested.
+
 ## Retro
 
 _(fill at end of sprint)_

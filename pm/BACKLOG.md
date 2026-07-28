@@ -33,11 +33,21 @@ proof and doc reconciliation**, not code.
 
 ## 3 · Security & secrets hygiene
 
+> **OPEN EXPOSURE (2026-07-28):** the MCP token — full-trust, bypasses org
+> scoping across every tenant — was baked into the **public** v0.1.1 installer.
+> It went in under the `AGENTX_DELIVERY_TOKEN` name, and nothing verified the
+> scope. Discovered when the installed desktop app failed at runtime with
+> *"this token is mcp-scoped (authoring)"*. AX-027 and AX-028 are the actual
+> remediation; everything else is cleanup.
+
 | ID | Task | Owner | Size | Status | Notes |
 |---|---|---|---|---|---|
+| AX-027 | **Rotate the MCP token** | dino | S | **todo — urgent** | The only step that closes the exposure. [pluggie.app admin](https://pluggie.app/admin/52bd98fd-695e-4e1e-ba38-b4ec00df74eb) → Settings → Tokens. Then update `~/.claude.json` (Claude's MCP tools break until you do) + any replicator/qualification env. |
+| AX-028 | Delete the v0.1.1 release + assets | dino | S | **todo — urgent** | The installer containing the token is publicly downloadable. Rotation makes it inert; deletion stops it circulating. |
+| AX-029 | Put the delivery token in `.env` + repo secret | dino | S | todo | A "Prod" delivery token was minted 2026-07-28 17:15 but **`apps/desktop/.env` still holds the MCP token** — proven by `pnpm --filter @dinosales/desktop check:token`. Both the local file and the GitHub secret need the delivery token before v0.1.2 can ship. |
 | AX-011 | Rotate the Anthropic key exposed in `artifact.json` | dino | S | todo → S01 | Flagged in `POST-DEPLOY.md` → Open/needed. Still listed as outstanding. |
 | AX-012 | Rotate the Clerk secret key that appeared in chat | dino | S | todo → S01 | The `sk_test_` pasted into the connector's `publishableKey` field (2026-07-12). Connector config was fixed; the key itself was never confirmed rotated. |
-| AX-013 | Audit shipped bundles for `AGENTX_MCP_TOKEN` | claude | S | todo | The MCP token is full-trust and bypasses org scoping — it must never appear in `apps/web` or `apps/desktop` output. Grep the built artifacts and add a CI guard. Routing rules: `agentx/TOKENS.md`. |
+| AX-013 | Audit shipped bundles for `AGENTX_MCP_TOKEN` | claude | S | **partly done** | Logged as a theoretical risk on the morning of 2026-07-28; it happened that afternoon. The release gate now exists (`apps/desktop/check-token.mjs`, wired into `desktop-release.yml`) and asks the API for the token's scope before packaging — a name check would not have caught this. **Still owed:** the same guard for `apps/web` (Render env), where the value is set by hand in a dashboard with nothing verifying it. |
 
 ## 4 · Platform gaps still open from Phase 0/1
 

@@ -39,6 +39,15 @@ jobs:
             exit 1
           fi
 
+      # Present is not the same as correct. v0.1.1 shipped with the MCP token
+      # under this name — a full-trust credential in a public binary — because
+      # nothing verified the SCOPE. Ask the API before baking it in.
+      - name: Verify the token is delivery-scoped, not MCP
+        if: startsWith(github.ref, 'refs/tags/')
+        run: pnpm --filter @dinosales/desktop check:token
+        env:
+          AGENTX_DELIVERY_TOKEN: ${{ secrets.AGENTX_DELIVERY_TOKEN }}
+
       # electron-builder rebuilds native deps (better-sqlite3, keytar) for
       # Electron's ABI during packaging; windows-latest has the C++ toolchain.
       # If the rebuild is imperfect the app still runs (in-memory/file fallbacks).
