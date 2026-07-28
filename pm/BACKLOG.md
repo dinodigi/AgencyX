@@ -7,15 +7,15 @@ Tasks in the active sprint are marked **→ S01** etc.
 
 ## 1 · Desktop release — v0.1.0 (the last thing we were on)
 
-Code-complete on `main` at `a040b40` (2026-07-18). Verified locally: Clerk
-sign-in renders over loopback in packaged mode. **No tag exists yet** — the
-release has never been cut.
+First green release build landed 2026-07-28 (`8a4c6ec`, tag `v0.1.1`) after a
+packaging fix. The installer exists; it's sitting in a **draft** release.
 
 | ID | Task | Owner | Size | Status | Notes |
 |---|---|---|---|---|---|
-| AX-001 | Add repo secret `AGENTX_DELIVERY_TOKEN` | dino | S | blocked → S01 | Value is in `apps/desktop/.env`. github.com/dinodigi/AgencyX → Settings → Secrets and variables → Actions. Claude is blocked from credential-provisioning paths — this one is yours. |
-| AX-002 | Tag `v0.1.0` + push → verify the release build | dino | S | blocked → S01 | Blocked by AX-001; `desktop-release.yml` fails fast without the secret. Expected artifact: `AgencyX-Setup.exe`. |
-| AX-003 | Ship `v0.1.1` to prove self-update end-to-end | claude | M | todo → S01 | **W1 exit gate.** electron-builder → GitHub Releases → electron-updater, proven on a real install. Never yet demonstrated. |
+| AX-002 | Publish the v0.1.1 draft release | dino | S | review → S01 | Build is **green** and the draft carries `AgencyX-Setup.exe` (83.8 MB) + `.blockmap` + `latest.yml`. electron-builder drafts by default; **until it's published, electron-updater can't see it and `releases/latest/download/…` 404s**, so the web download button stays dead. |
+| AX-003 | Ship `v0.1.2` to prove self-update end-to-end | claude | M | todo → S01 | **W1 exit gate.** Was going to be v0.1.1, but that number got spent recovering from the packaging bug. Needs AX-002 published first — updater can't see drafts. |
+| AX-024 | Decide `releaseType` — keep drafting or auto-publish | claude+dino | S | todo → S01 | Default drafts every release, so each one needs a manual publish click. Setting `releaseType: release` in `electron-builder.yml` makes tags publish straight away. Draft-by-default is the safer habit while unsigned; worth a deliberate call rather than rediscovering it each time. |
+| AX-025 | Delete the stale `v0.1.0` tag | dino | S | todo | Points at the pre-fix commit `23def18` with no release attached. Harmless but reads like a shipped version. Bin icon at github.com/dinodigi/AgencyX/tags, then `git tag -d v0.1.0` locally. |
 | AX-004 | Decide + order Authenticode cert (OV vs EV) | dino | M | todo | Roadmap open decision #2. Validation lead time is long; needed before any external tenant and for a clean SmartScreen. |
 | AX-005 | Clerk `pk_live` switch + loopback origin allowlist | dino | S | todo | Currently on `pk_test_` (amusing-elk-34). Needed before non-internal users. |
 

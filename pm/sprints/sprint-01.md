@@ -11,9 +11,10 @@ they need a tag, a live run, and honest docs.
 
 | ID | Task | Owner | Size | Status |
 |---|---|---|---|---|
-| AX-001 | Add repo secret `AGENTX_DELIVERY_TOKEN` | dino | S | blocked |
-| AX-002 | Tag `v0.1.0` + push → verify the release build | dino | S | blocked |
-| AX-003 | Ship `v0.1.1` to prove self-update end-to-end (W1 exit gate) | claude | M | todo |
+| AX-001 | Add repo secret `AGENTX_DELIVERY_TOKEN` | dino | S | **done** |
+| AX-002 | Cut the first release build | claude | S | **review** — draft awaiting publish |
+| AX-003 | Ship `v0.1.2` to prove self-update end-to-end (W1 exit gate) | claude | M | todo |
+| AX-024 | Decide `releaseType` — keep drafting or auto-publish | claude+dino | S | todo |
 | AX-006 | Live tuning: Maps deep re-scrape lookup match | claude | M | todo |
 | AX-007 | Reconcile `POST-DEPLOY.md` with what's actually proven | claude | S | todo |
 | AX-008 | Set `PAGESPEED_API_KEY` (local + Render) | dino | S | todo |
@@ -30,10 +31,9 @@ they need a tag, a live run, and honest docs.
 
 ## Blockers
 
-- **AX-001 blocks AX-002 blocks AX-003** — the whole release thread is one
-  hand-off deep. `desktop-release.yml` fails fast without the secret, so nothing
-  downstream can start until it's set. This has been the standing blocker since
-  2026-07-18.
+- ~~AX-001 blocks AX-002 blocks AX-003~~ — cleared 2026-07-28.
+- **AX-003 needs AX-002 published**, not just built: electron-updater cannot
+  read draft releases, so the self-update gate can't run against a draft.
 - **AX-006 / AX-009 need a real machine + live Google + Moz** — they can't be
   done from tests alone.
 
@@ -43,6 +43,27 @@ they need a tag, a live run, and honest docs.
 sync with `origin` at `a040b40`, **no git tags exist** — v0.1.0 was never cut.
 `apps/qualification` is still a bare stub (`package.json` only); the phase-3 work
 lives in `apps/desktop` + `apps/web`.
+
+**2026-07-28 (later)** — AX-001 done, first release attempted, and it failed —
+usefully. Run 30343523005 died in electron-builder at the asar stage:
+`packages/agentx-client/package.json must be under apps/desktop/`. Cause: the
+three `@dinosales/*` workspace packages were runtime `dependencies`, so
+electron-builder tried to collect them from `../../packages/*`, outside
+`appDir`. They were never needed at runtime — `build.mjs` bundles their TS into
+`dist/`. Moved to `devDependencies` (`b6a8518`); native rebuild and the Electron
+download had already been passing.
+
+Two things worth remembering:
+- **The tag couldn't be re-pointed** (deleting a remote tag is blocked here), so
+  0.1.1 became the first published version and the self-update proof shifts to
+  v0.1.2. `v0.1.0` is now a dud tag → AX-025.
+- **electron-builder drafts releases by default.** The build reports success and
+  publishes nothing visible. Caught because the public releases API returned
+  empty while the run was green → AX-024.
+
+Run 30344497513 green end-to-end. Draft 0.1.1 holds `AgencyX-Setup.exe`
+(83.8 MB), `AgencyX-Setup.exe.blockmap`, `latest.yml` (330 B). 41 desktop tests
+green locally.
 
 ## Retro
 
